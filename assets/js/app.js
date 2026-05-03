@@ -3,6 +3,26 @@ import { onAuthChange, refreshAuth, signOut } from "./auth.js";
 import { loadInitialEdition } from "./state.js";
 import { $, $$, el, clear } from "./utils.js";
 
+console.log("[boot] app.js evaluado");
+
+// Fallback: si en 12s no se montó nada, mostrar mensaje de diagnóstico
+setTimeout(() => {
+  const main = document.querySelector("[data-app-main]");
+  const stillLoading = main?.querySelector("[data-initial-loading]");
+  if (stillLoading) {
+    console.error("[boot] timeout — la app no terminó de iniciar");
+    main.innerHTML = `
+      <section class="container">
+        <div class="error-banner">
+          <strong>La aplicación no terminó de iniciar.</strong><br>
+          Abre la consola (Cmd+Opt+J) y revisa si hay errores en rojo. Luego haz Cmd+Shift+R para recargar sin caché.
+        </div>
+        <p class="text-muted mt-3">Si el problema persiste, revisa que las migraciones de Supabase se hayan aplicado correctamente.</p>
+        <a class="btn btn--primary mt-3" href="#/">Ir al inicio</a>
+      </section>`;
+  }
+}, 12000);
+
 import { renderLanding } from "./views/landing.js";
 import { renderProjects } from "./views/public_projects.js";
 import { renderProject } from "./views/public_project.js";
@@ -60,8 +80,30 @@ defineRoute("/admin/:section", ({ params }) => renderAdmin({ section: params.sec
 defineRoute("/admin/proyectos/:id", ({ params }) => renderAdmin({ section: "proyecto", projectId: params.id }));
 
 /* ---- Boot ---- */
+function withTimeout(promise, ms, label) {
+  return Promise.race([
+    promise,
+    new Promise((resolve) => setTimeout(() => {
+      console.warn(`[boot] timeout: ${label} (${ms}ms)`);
+      resolve(null);
+    }, ms)),
+  ]);
+}
+
+window.addEventListener("error", (e) => console.error("[global error]", e?.error || e?.message));
+window.addEventListener("unhandledrejection", (e) => console.error("[unhandled rejection]", e?.reason));
+
 (async function boot() {
-  await refreshAuth();
-  try { await loadInitialEdition(); } catch {}
-  startRouter();
+  try { await withTimeout(refreshAuth(), 8000, "refreshAuth"); }
+  catch (e) { console.error("[boot] refreshAuth failed", e); }
+  try { await withTimeout(loadInitialEdition(), 8000, "loadInitialEdition"); }
+  catch (e) { console.error("[boot] loadInitialEdition failed", e); }
+  try { startRouter(); }
+  catch (e) {
+    console.error("[boot] startRouter failed", e);
+    const main = document.querySelector("[data-app-main]");
+    if (main) {
+      main.innerHTML = `<section class="container"><div class="error-banner">No se pudo iniciar la aplicación. Recarga la página.</div></section>`;
+    }
+  }
 })();
