@@ -363,6 +363,34 @@ async function mountDetails(root, p) {
   const roomEl = el("input", { class: "input", value: p.room || "" });
   const orderEl = el("input", { class: "input", type: "number", value: p.presentation_order ?? "" });
   const descEl = el("textarea", { class: "textarea", value: p.description || "" });
+  const errBox = el("div", { class: "error-banner", style: { display: "none", marginTop: "var(--space-3)" } });
+  const saveBtn = el("button", { class: "btn btn--primary", text: "Guardar" });
+  saveBtn.addEventListener("click", async () => {
+    errBox.style.display = "none";
+    saveBtn.disabled = true;
+    const orig = saveBtn.textContent;
+    saveBtn.textContent = "Guardando…";
+    try {
+      console.log("[project save] update", p.id);
+      const updated = await updateProject(p.id, {
+        name: nameEl.value.trim(),
+        grade_label: gradeEl.value.trim() || null,
+        room: roomEl.value.trim() || null,
+        presentation_order: orderEl.value ? Number(orderEl.value) : null,
+        description: descEl.value.trim() || null,
+      });
+      console.log("[project save] updated", updated);
+      Object.assign(p, updated);
+      toast("Datos guardados", "success");
+    } catch (e) {
+      console.error("[project save] error", e);
+      errBox.style.display = "block";
+      errBox.textContent = "Error: " + (e?.message || JSON.stringify(e));
+    } finally {
+      saveBtn.disabled = false;
+      saveBtn.textContent = orig;
+    }
+  });
   root.append(el("div", { class: "card" }, [
     el("div", { class: "field" }, [el("label", { class: "field__label", text: "Nombre" }), nameEl]),
     el("div", { class: "field-row field-row--3" }, [
@@ -371,26 +399,21 @@ async function mountDetails(root, p) {
       el("div", { class: "field" }, [el("label", { class: "field__label", text: "Orden" }), orderEl]),
     ]),
     el("div", { class: "field" }, [el("label", { class: "field__label", text: "Descripción" }), descEl]),
-    el("button", { class: "btn btn--primary", text: "Guardar", onclick: async () => {
-      try {
-        await updateProject(p.id, {
-          name: nameEl.value.trim(),
-          grade_label: gradeEl.value.trim() || null,
-          room: roomEl.value.trim() || null,
-          presentation_order: orderEl.value ? Number(orderEl.value) : null,
-          description: descEl.value.trim() || null,
-        });
-        toast("Datos guardados", "success");
-      } catch (e) { toast("Error: " + (e.message || ""), "error"); }
-    } }),
+    errBox,
+    saveBtn,
   ]));
 }
 
 /* --- equipo --- */
 async function mountTeam(root, project, team, members) {
+  const statusBox = el("div", { class: team?.id ? "pill pill--accent" : "pill", text: team?.id ? `Equipo guardado: ${team.name}` : "Sin equipo registrado" });
+  const errBox = el("div", { class: "error-banner", style: { display: "none", marginTop: "var(--space-3)" } });
+
   const nameEl = el("input", { class: "input", value: team?.name || "", placeholder: "Nombre del equipo" });
   const list = el("div", { class: "flex-col gap-2 mt-3" });
   let workingMembers = (members || []).map((m) => ({ full_name: m.full_name }));
+  let savedSnapshot = null;
+
   function paint() {
     clear(list);
     workingMembers.forEach((m, i) => {
@@ -414,8 +437,56 @@ async function mountTeam(root, project, team, members) {
     finally { fileInput.value = ""; }
   });
 
+  const saveBtn = el("button", { class: "btn btn--primary", text: "Guardar equipo", onclick: onSave });
+
+  async function onSave() {
+    errBox.style.display = "none";
+    errBox.textContent = "";
+    if (!nameEl.value.trim()) {
+      errBox.style.display = "block";
+      errBox.textContent = "Debe indicar el nombre del equipo";
+      return;
+    }
+    saveBtn.disabled = true;
+    const originalLabel = saveBtn.textContent;
+    saveBtn.textContent = "Guardando…";
+    try {
+      console.log("[team save] upsertTeam", { project_id: project.id, name: nameEl.value.trim() });
+      const t = await upsertTeam({ projectId: project.id, name: nameEl.value.trim() });
+      console.log("[team save] team upserted", t);
+      const cleanMembers = workingMembers
+        .filter((m) => m.full_name?.trim())
+        .map((m) => ({ full_name: m.full_name.trim() }));
+      console.log("[team save] replaceTeamMembers", { team_id: t.id, count: cleanMembers.length });
+      const inserted = await replaceTeamMembers(t.id, cleanMembers);
+      console.log("[team save] members inserted", inserted);
+      // Refrescar desde el servidor para confirmar persistencia
+      const fresh = await getProjectFull(project.id);
+      savedSnapshot = { team: fresh?.team ?? t, members: fresh?.members ?? inserted };
+      console.log("[team save] verified after refetch", savedSnapshot);
+      // Actualizar UI con datos confirmados
+      nameEl.value = savedSnapshot.team?.name || nameEl.value;
+      workingMembers = (savedSnapshot.members || []).map((m) => ({ full_name: m.full_name }));
+      paint();
+      statusBox.className = "pill pill--accent";
+      statusBox.textContent = `Equipo guardado: ${savedSnapshot.team?.name}  ·  ${savedSnapshot.members?.length || 0} integrantes`;
+      toast("Equipo guardado", "success");
+    } catch (e) {
+      console.error("[team save] error", e);
+      errBox.style.display = "block";
+      errBox.textContent = "Error guardando: " + (e?.message || JSON.stringify(e));
+      toast("Error: " + (e?.message || ""), "error");
+    } finally {
+      saveBtn.disabled = false;
+      saveBtn.textContent = originalLabel;
+    }
+  }
+
   root.append(el("div", { class: "card" }, [
-    el("h3", { class: "card__title", text: "Equipo" }),
+    el("div", { class: "flex items-center gap-2 mb-3" }, [
+      el("h3", { class: "card__title", style: { margin: 0 }, text: "Equipo" }),
+      statusBox,
+    ]),
     el("div", { class: "field" }, [el("label", { class: "field__label", text: "Nombre del equipo" }), nameEl]),
     el("div", { class: "section-head" }, [
       el("h4", { text: "Integrantes" }),
@@ -426,16 +497,8 @@ async function mountTeam(root, project, team, members) {
     ]),
     list,
     fileInput,
-    el("div", { class: "btn-row mt-4" }, [
-      el("button", { class: "btn btn--primary", text: "Guardar equipo", onclick: async () => {
-        if (!nameEl.value.trim()) return toast("Debe indicar el nombre del equipo", "error");
-        try {
-          const t = await upsertTeam({ projectId: project.id, name: nameEl.value.trim() });
-          await replaceTeamMembers(t.id, workingMembers.filter((m) => m.full_name?.trim()).map((m) => ({ full_name: m.full_name.trim() })));
-          toast("Equipo guardado", "success");
-        } catch (e) { toast("Error: " + (e.message || ""), "error"); }
-      } }),
-    ]),
+    errBox,
+    el("div", { class: "btn-row mt-4" }, [saveBtn]),
   ]));
 }
 
