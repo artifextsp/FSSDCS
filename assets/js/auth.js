@@ -59,12 +59,32 @@ export async function refreshAuth() {
   return cache;
 }
 
+// Mantiene los headers de los sub-clientes Supabase sincronizados con la
+// sesión activa para que las queries siempre usen el JWT vigente.
+function syncSubclientHeaders(session) {
+  const bearer = session?.access_token ? `Bearer ${session.access_token}` : null;
+  try {
+    if (supabase.rest?.headers) {
+      if (bearer) supabase.rest.headers.Authorization = bearer;
+      else delete supabase.rest.headers.Authorization;
+    }
+  } catch {}
+  try {
+    if (supabase.storage?.headers) {
+      if (bearer) supabase.storage.headers.Authorization = bearer;
+      else delete supabase.storage.headers.Authorization;
+    }
+  } catch {}
+  try { supabase.realtime?.setAuth?.(session?.access_token || null); } catch {}
+}
+
 // El listener fires en INITIAL_SESSION, SIGNED_IN, SIGNED_OUT, TOKEN_REFRESHED,
 // USER_UPDATED, PASSWORD_RECOVERY. Recibimos la sesión actual y la usamos
 // directamente en lugar de re-llamar a getSession(), evitando timeouts en
 // el camino de "hot path" (focus/visibility refresh).
 supabase.auth.onAuthStateChange(async (_event, session) => {
   try {
+    syncSubclientHeaders(session);
     const profile = session ? await getProfileFor(session.user.id) : null;
     cache = { session, profile, ready: true };
     emit();

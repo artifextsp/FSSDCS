@@ -32,16 +32,19 @@ export const supabase = createClient(SUPABASE_URL, SUPABASE_KEY, {
   realtime: { params: { eventsPerSecond: 5 } },
 });
 
-// Inyecta inmediatamente el access_token cacheado en el cliente Supabase
-// para que las queries iniciales no vayan como anónimas.
+// Inyecta inmediatamente el access_token cacheado en TODOS los sub-clientes
+// (rest/postgrest, storage, realtime) MUTANDO sus headers, sin pasar por
+// supabase.auth.setSession que internamente puede hacer un network call de
+// validación que se cuelga (especialmente con Brave + Web Locks).
+// Cuando supabase.auth complete su _initialize el header se actualizará
+// con el token refrescado; mientras tanto las queries ya funcionan.
 const _cachedAtBoot = readCachedSession();
 if (_cachedAtBoot?.access_token) {
-  // setSession actualiza el JWT que usa PostgrestClient/Storage/Realtime.
-  // No bloqueamos en el await; pero como nuestro lock es no-op debe ser inmediato.
-  supabase.auth.setSession({
-    access_token: _cachedAtBoot.access_token,
-    refresh_token: _cachedAtBoot.refresh_token,
-  }).catch((e) => console.warn("[supabase] setSession seed failed", e));
+  const bearer = `Bearer ${_cachedAtBoot.access_token}`;
+  try { if (supabase.rest?.headers) supabase.rest.headers.Authorization = bearer; } catch {}
+  try { if (supabase.storage?.headers) supabase.storage.headers.Authorization = bearer; } catch {}
+  try { supabase.realtime?.setAuth?.(_cachedAtBoot.access_token); } catch {}
+  console.log("[supabase] JWT cacheado inyectado en sub-clientes");
 }
 
 // Fetch directo a PostgREST con el access_token cacheado, como fallback robusto
