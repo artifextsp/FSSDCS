@@ -11,23 +11,18 @@ export const supabase = createClient(SUPABASE_URL, SUPABASE_KEY, {
   realtime: { params: { eventsPerSecond: 5 } },
 });
 
-function withTimeoutMs(promise, ms, fallback = null) {
-  return Promise.race([
-    promise,
-    new Promise((resolve) => setTimeout(() => resolve(fallback), ms)),
-  ]);
-}
+// Símbolo especial: getSession() lanza este error cuando se cumple el timeout,
+// para que refreshAuth no degrade una sesión válida a null por culpa de un
+// refresh de token lento o un cuelgue de red.
+export const GET_SESSION_TIMEOUT = Symbol("getSession timeout");
 
 export async function getSession() {
-  // Si Supabase tarda en responder (token expirado, refresh lento, red bloqueada),
-  // devolvemos null y dejamos que la app siga; el listener onAuthStateChange
-  // actualizará el estado cuando finalmente complete.
-  const result = await withTimeoutMs(
-    supabase.auth.getSession().then((r) => r?.data?.session ?? null).catch(() => null),
-    2500,
-    null
-  );
-  return result;
+  return Promise.race([
+    supabase.auth.getSession().then((r) => r?.data?.session ?? null),
+    new Promise((_, reject) =>
+      setTimeout(() => reject(GET_SESSION_TIMEOUT), 2500)
+    ),
+  ]);
 }
 
 export async function getProfileFor(userId) {

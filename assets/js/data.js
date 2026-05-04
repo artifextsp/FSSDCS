@@ -438,25 +438,16 @@ export async function listConfigs(projectId) {
 }
 
 export async function upsertActiveConfig({ projectId, phase, methodType, scaleMin, scaleMax, config }) {
-  await supabase
-    .from("evaluation_configs")
-    .update({ is_active: false })
-    .eq("project_id", projectId)
-    .eq("phase", phase)
-    .eq("is_active", true);
-  const { data, error } = await supabase
-    .from("evaluation_configs")
-    .insert({
-      project_id: projectId,
-      phase,
-      method_type: methodType,
-      scale_min: scaleMin,
-      scale_max: scaleMax,
-      config,
-      is_active: true,
-    })
-    .select("*")
-    .single();
+  // Atómico vía RPC (evita 409 por race entre UPDATE y INSERT con el partial
+  // unique index evaluation_configs_one_active_per_phase).
+  const { data, error } = await supabase.rpc("admin_upsert_active_config", {
+    p_project_id: projectId,
+    p_phase: phase,
+    p_method_type: methodType,
+    p_scale_min: scaleMin,
+    p_scale_max: scaleMax,
+    p_config: config,
+  });
   if (error) throw error;
   return data;
 }

@@ -1,4 +1,4 @@
-import { supabase, getProfileFor, getSession } from "./supabase.js";
+import { supabase, getProfileFor, getSession, GET_SESSION_TIMEOUT } from "./supabase.js";
 
 const listeners = new Set();
 let cache = { session: null, profile: null, ready: false };
@@ -16,15 +16,44 @@ function emit() {
 }
 
 export async function refreshAuth() {
-  const session = await getSession();
-  const profile = session ? await getProfileFor(session.user.id) : null;
-  cache = { session, profile, ready: true };
-  emit();
+  try {
+    const session = await getSession();
+    const profile = session ? await getProfileFor(session.user.id) : null;
+    cache = { session, profile, ready: true };
+    emit();
+  } catch (e) {
+    if (e === GET_SESSION_TIMEOUT) {
+      // Timeout en getSession: NO degradamos la sesión cacheada. Si todavía no
+      // estábamos listos, marcamos ready=true (como anónimo) para que la UI
+      // muestre login en vez del spinner; cuando supabase-js complete el
+      // refresh, onAuthStateChange disparará otro refreshAuth con la sesión real.
+      if (!cache.ready) {
+        cache = { ...cache, ready: true };
+        emit();
+      }
+      return cache;
+    }
+    console.error("[auth] refresh error", e);
+    if (!cache.ready) {
+      cache = { session: null, profile: null, ready: true };
+      emit();
+    }
+  }
   return cache;
 }
 
-supabase.auth.onAuthStateChange(async () => {
-  await refreshAuth();
+// El listener fires en INITIAL_SESSION, SIGNED_IN, SIGNED_OUT, TOKEN_REFRESHED,
+// USER_UPDATED, PASSWORD_RECOVERY. Recibimos la sesión actual y la usamos
+// directamente en lugar de re-llamar a getSession(), evitando timeouts en
+// el camino de "hot path" (focus/visibility refresh).
+supabase.auth.onAuthStateChange(async (_event, session) => {
+  try {
+    const profile = session ? await getProfileFor(session.user.id) : null;
+    cache = { session, profile, ready: true };
+    emit();
+  } catch (e) {
+    console.error("[auth] onAuthStateChange profile fetch failed", e);
+  }
 });
 
 export async function signInWithPassword(email, password) {

@@ -207,21 +207,54 @@
 .tabs {
   display: flex;
   flex-wrap: wrap;
-  gap: var(--space-2);
-  border-bottom: 1px solid var(--color-border);
+  gap: 4px;
+  padding: 4px;
   margin-bottom: var(--space-5);
-  padding-bottom: var(--space-2);
+  background: var(--color-surface-2, rgba(255,255,255,0.04));
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-lg, 14px);
+  position: relative;
+  overflow-x: auto;
+  scrollbar-width: thin;
 }
+.tabs::-webkit-scrollbar { height: 4px; }
+.tabs::-webkit-scrollbar-thumb { background: var(--color-border); border-radius: 4px; }
+
 .tabs__btn {
   background: transparent;
-  border: none;
+  border: 1px solid transparent;
   color: var(--color-text-muted);
   font-weight: 600;
-  padding: 0.55rem 0.85rem;
+  font-size: 0.9rem;
+  padding: 0.55rem 0.95rem;
   border-radius: var(--radius-md);
   cursor: pointer;
+  text-decoration: none;
+  white-space: nowrap;
+  transition: background-color 120ms ease, color 120ms ease, border-color 120ms ease, transform 80ms ease;
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  letter-spacing: 0.01em;
 }
-.tabs__btn.is-active { color: var(--color-text); background: var(--color-surface); }
+.tabs__btn:hover {
+  color: var(--color-text);
+  background: rgba(255,255,255,0.04);
+}
+.tabs__btn:focus-visible {
+  outline: 2px solid var(--color-primary);
+  outline-offset: 2px;
+}
+.tabs__btn.is-active {
+  color: #06121f;
+  background: var(--color-primary);
+  border-color: var(--color-primary);
+  box-shadow: 0 6px 16px -8px rgba(96, 165, 250, 0.6);
+}
+.tabs__btn.is-active:hover {
+  color: #06121f;
+  background: var(--color-primary);
+}
 
 /* ============== Toasts ============== */
 .toast-stack {

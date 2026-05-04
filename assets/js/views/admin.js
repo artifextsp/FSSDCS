@@ -677,18 +677,33 @@ function configEditor(project, phase, current) {
       jsonEl,
     ]),
     el("div", { class: "btn-row" }, [
-      el("button", { class: "btn btn--primary", text: "Guardar configuración", onclick: async () => {
-        let cfg; try { cfg = JSON.parse(jsonEl.value); } catch (e) { return toast("JSON inválido: " + e.message, "error"); }
-        try {
-          await upsertActiveConfig({
-            projectId: project.id, phase,
-            methodType: methodEl.value,
-            scaleMin: Number(minEl.value), scaleMax: Number(maxEl.value),
-            config: cfg,
-          });
-          toast("Configuración guardada", "success");
-        } catch (e) { toast("Error: " + (e?.message || ""), "error"); }
-      } }),
+      (() => {
+        const btn = el("button", { class: "btn btn--primary", text: "Guardar configuración" });
+        btn.addEventListener("click", async () => {
+          if (btn.disabled) return;
+          let cfg;
+          try { cfg = JSON.parse(jsonEl.value); }
+          catch (e) { return toast("JSON inválido: " + e.message, "error"); }
+          btn.disabled = true;
+          const original = btn.textContent;
+          btn.textContent = "Guardando…";
+          try {
+            await upsertActiveConfig({
+              projectId: project.id, phase,
+              methodType: methodEl.value,
+              scaleMin: Number(minEl.value), scaleMax: Number(maxEl.value),
+              config: cfg,
+            });
+            toast("Configuración guardada", "success");
+          } catch (e) {
+            toast("Error: " + (e?.message || ""), "error");
+          } finally {
+            btn.disabled = false;
+            btn.textContent = original;
+          }
+        });
+        return btn;
+      })(),
       el("button", { class: "btn btn--ghost", text: "Restaurar plantilla", onclick: () => {
         jsonEl.value = JSON.stringify(templateForMethod(methodEl.value), null, 2);
       } }),
