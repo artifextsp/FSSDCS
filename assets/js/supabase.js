@@ -21,16 +21,6 @@ export function readCachedSession() {
 // Bypass de navigator.locks para evitar cuelgues cross-tab en Brave/Safari.
 const lockNoOp = async (_name, _timeout, fn) => fn();
 
-// Si hay sesión cacheada, pasamos su access_token como Authorization header
-// global desde la creación del cliente. Así TODAS las queries (PostgREST,
-// Storage, etc.) van autenticadas desde el primer milisegundo, sin esperar a
-// que supabase.auth._initialize() termine. Cuando _initialize complete, el
-// cliente actualizará el header internamente con el token refrescado.
-const _cachedAtBoot = readCachedSession();
-const _initialHeaders = _cachedAtBoot?.access_token
-  ? { Authorization: `Bearer ${_cachedAtBoot.access_token}` }
-  : undefined;
-
 export const supabase = createClient(SUPABASE_URL, SUPABASE_KEY, {
   auth: {
     persistSession: true,
@@ -39,9 +29,45 @@ export const supabase = createClient(SUPABASE_URL, SUPABASE_KEY, {
     storageKey: STORAGE_KEY,
     lock: lockNoOp,
   },
-  global: _initialHeaders ? { headers: _initialHeaders } : undefined,
   realtime: { params: { eventsPerSecond: 5 } },
 });
+
+// Inyecta inmediatamente el access_token cacheado en el cliente Supabase
+// para que las queries iniciales no vayan como anónimas.
+const _cachedAtBoot = readCachedSession();
+if (_cachedAtBoot?.access_token) {
+  // setSession actualiza el JWT que usa PostgrestClient/Storage/Realtime.
+  // No bloqueamos en el await; pero como nuestro lock es no-op debe ser inmediato.
+  supabase.auth.setSession({
+    access_token: _cachedAtBoot.access_token,
+    refresh_token: _cachedAtBoot.refresh_token,
+  }).catch((e) => console.warn("[supabase] setSession seed failed", e));
+}
+
+// Fetch directo a PostgREST con el access_token cacheado, como fallback robusto
+// que NO depende del estado interno de supabase-js.
+export async function fetchProfileDirect(userId, accessToken) {
+  if (!userId || !accessToken) return null;
+  try {
+    const url = `${SUPABASE_URL}/rest/v1/profiles?select=user_id,display_name,role&user_id=eq.${encodeURIComponent(userId)}&limit=1`;
+    const res = await fetch(url, {
+      headers: {
+        apikey: SUPABASE_KEY,
+        Authorization: `Bearer ${accessToken}`,
+        Accept: "application/json",
+      },
+    });
+    if (!res.ok) {
+      console.warn("[fetchProfileDirect] http", res.status);
+      return null;
+    }
+    const arr = await res.json();
+    return Array.isArray(arr) && arr.length ? arr[0] : null;
+  } catch (e) {
+    console.warn("[fetchProfileDirect] error", e);
+    return null;
+  }
+}
 
 // Símbolo especial: getSession() lanza este error cuando se cumple el timeout,
 // para que refreshAuth no degrade una sesión válida a null por culpa de un

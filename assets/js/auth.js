@@ -1,18 +1,22 @@
-import { supabase, getProfileFor, getSession, GET_SESSION_TIMEOUT, readCachedSession } from "./supabase.js";
+import { supabase, getProfileFor, getSession, GET_SESSION_TIMEOUT, readCachedSession, fetchProfileDirect } from "./supabase.js";
 
 const listeners = new Set();
 
-// Sembramos el cache con la sesión guardada en localStorage. Como el cliente
-// supabase ya se creó con Authorization: Bearer <cached> desde global.headers,
-// supabase.from(...) ya devuelve datos autenticados aunque _initialize aún no
-// haya terminado.
+// Sembramos el cache con la sesión guardada en localStorage. El perfil se
+// carga vía fetch directo (con el access_token de la sesión cacheada), porque
+// supabase.from(...) puede ir como anónimo si _initialize aún no terminó.
 const _seed = readCachedSession();
 let cache = _seed
   ? { session: _seed, profile: null, ready: true }
   : { session: null, profile: null, ready: false };
 if (_seed) {
-  getProfileFor(_seed.user.id)
-    .then((profile) => { cache = { ...cache, profile }; emit(); })
+  console.log("[auth] seed: session válida, cargando perfil…");
+  fetchProfileDirect(_seed.user.id, _seed.access_token)
+    .then((profile) => {
+      console.log("[auth] seed perfil:", profile);
+      cache = { ...cache, profile };
+      emit();
+    })
     .catch((e) => console.warn("[auth] profile seed failed", e));
 }
 
