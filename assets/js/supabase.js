@@ -3,27 +3,9 @@ import { SUPABASE_URL, SUPABASE_KEY } from "./config.js";
 
 export const STORAGE_KEY = "feria-steam-auth";
 
-// Bypass de navigator.locks para evitar cuelgues cross-tab en Brave/Safari.
-// supabase-js usa Web Locks para coordinar refresh de token entre tabs; cuando
-// hay 2+ tabs abiertos, el lock puede quedarse retenido por un tab inactivo y
-// bloquear getSession() indefinidamente. Con este no-op cada tab se autorefreca
-// independientemente, lo cual es seguro para una app pequeña.
-const lockNoOp = async (_name, _timeout, fn) => fn();
-
-export const supabase = createClient(SUPABASE_URL, SUPABASE_KEY, {
-  auth: {
-    persistSession: true,
-    autoRefreshToken: true,
-    detectSessionInUrl: false,
-    storageKey: STORAGE_KEY,
-    lock: lockNoOp,
-  },
-  realtime: { params: { eventsPerSecond: 5 } },
-});
-
 // Lee la sesión guardada en localStorage por supabase-js, sin pasar por el
 // cliente (cuyo _initialize puede ser lento). Sirve para sembrar el cache de
-// auth y evitar que la UI parpadee a la pantalla de login.
+// auth y para inicializar el JWT del cliente Supabase.
 export function readCachedSession() {
   try {
     const raw = localStorage.getItem(STORAGE_KEY);
@@ -35,6 +17,31 @@ export function readCachedSession() {
     return s;
   } catch { return null; }
 }
+
+// Bypass de navigator.locks para evitar cuelgues cross-tab en Brave/Safari.
+const lockNoOp = async (_name, _timeout, fn) => fn();
+
+// Si hay sesión cacheada, pasamos su access_token como Authorization header
+// global desde la creación del cliente. Así TODAS las queries (PostgREST,
+// Storage, etc.) van autenticadas desde el primer milisegundo, sin esperar a
+// que supabase.auth._initialize() termine. Cuando _initialize complete, el
+// cliente actualizará el header internamente con el token refrescado.
+const _cachedAtBoot = readCachedSession();
+const _initialHeaders = _cachedAtBoot?.access_token
+  ? { Authorization: `Bearer ${_cachedAtBoot.access_token}` }
+  : undefined;
+
+export const supabase = createClient(SUPABASE_URL, SUPABASE_KEY, {
+  auth: {
+    persistSession: true,
+    autoRefreshToken: true,
+    detectSessionInUrl: false,
+    storageKey: STORAGE_KEY,
+    lock: lockNoOp,
+  },
+  global: _initialHeaders ? { headers: _initialHeaders } : undefined,
+  realtime: { params: { eventsPerSecond: 5 } },
+});
 
 // Símbolo especial: getSession() lanza este error cuando se cumple el timeout,
 // para que refreshAuth no degrade una sesión válida a null por culpa de un

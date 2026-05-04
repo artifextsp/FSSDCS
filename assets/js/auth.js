@@ -2,16 +2,15 @@ import { supabase, getProfileFor, getSession, GET_SESSION_TIMEOUT, readCachedSes
 
 const listeners = new Set();
 
-// Sembramos el cache con la sesión guardada en localStorage (si la hay y no
-// expiró) y disparamos en background el fetch del perfil. Así, aunque
-// supabase-js tarde en _initialize, la UI puede pintar el panel directamente
-// sin parpadeo a la pantalla de login.
+// Sembramos el cache con la sesión guardada en localStorage. Como el cliente
+// supabase ya se creó con Authorization: Bearer <cached> desde global.headers,
+// supabase.from(...) ya devuelve datos autenticados aunque _initialize aún no
+// haya terminado.
 const _seed = readCachedSession();
 let cache = _seed
   ? { session: _seed, profile: null, ready: true }
   : { session: null, profile: null, ready: false };
 if (_seed) {
-  // No bloqueamos: cuando llegue el perfil, emit() actualizará la UI.
   getProfileFor(_seed.user.id)
     .then((profile) => { cache = { ...cache, profile }; emit(); })
     .catch((e) => console.warn("[auth] profile seed failed", e));
