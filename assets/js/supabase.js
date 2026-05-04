@@ -1,5 +1,5 @@
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2.45.4?bundle";
-import { SUPABASE_URL, SUPABASE_KEY } from "./config.js?v=12";
+import { SUPABASE_URL, SUPABASE_KEY } from "./config.js?v=13";
 
 export const STORAGE_KEY = "feria-steam-auth";
 
@@ -32,20 +32,78 @@ export const supabase = createClient(SUPABASE_URL, SUPABASE_KEY, {
   realtime: { params: { eventsPerSecond: 5 } },
 });
 
-// Inyecta inmediatamente el access_token cacheado en TODOS los sub-clientes
-// (rest/postgrest, storage, realtime) MUTANDO sus headers, sin pasar por
-// supabase.auth.setSession que internamente puede hacer un network call de
-// validación que se cuelga (especialmente con Brave + Web Locks).
-// Cuando supabase.auth complete su _initialize el header se actualizará
-// con el token refrescado; mientras tanto las queries ya funcionan.
-const _cachedAtBoot = readCachedSession();
-if (_cachedAtBoot?.access_token) {
-  const bearer = `Bearer ${_cachedAtBoot.access_token}`;
+// =====================================================================
+// PARCHE CRÍTICO: bypass del _fetchWithAuth interno de supabase-js.
+//
+// supabase-js v2 envuelve TODAS las queries de PostgREST/Storage con un
+// custom fetch que llama `await supabase.auth.getSession()` antes de
+// añadir el header Authorization. Si `_initialize` de GoTrueClient se
+// cuelga (común en Brave/Safari con Web Locks o conexiones lentas), TODA
+// query queda esperando indefinidamente sin disparar requests de red.
+//
+// Para evitarlo, mantenemos una sesión "viva" en memoria (sembrada desde
+// localStorage y actualizada por onAuthStateChange) y reemplazamos el
+// `fetch` interno de los sub-clientes con uno que la lee al vuelo, sin
+// pasar por la maquinaria de auth.
+// =====================================================================
+let _liveSession = readCachedSession();
+
+export function getLiveSession() {
+  return _liveSession;
+}
+
+function buildAuthFetch() {
+  return async (input, init = {}) => {
+    const headers = new Headers(init.headers || {});
+    headers.set("apikey", SUPABASE_KEY);
+    const token = _liveSession?.access_token || SUPABASE_KEY;
+    headers.set("Authorization", `Bearer ${token}`);
+    return fetch(input, { ...init, headers });
+  };
+}
+
+const _staticFetch = buildAuthFetch();
+try { if (supabase.rest) supabase.rest.fetch = _staticFetch; } catch {}
+try { if (supabase.storage) supabase.storage.fetch = _staticFetch; } catch {}
+try { if (supabase.functions) supabase.functions.fetch = _staticFetch; } catch {}
+
+if (_liveSession?.access_token) {
+  const bearer = `Bearer ${_liveSession.access_token}`;
   try { if (supabase.rest?.headers) supabase.rest.headers.Authorization = bearer; } catch {}
   try { if (supabase.storage?.headers) supabase.storage.headers.Authorization = bearer; } catch {}
-  try { supabase.realtime?.setAuth?.(_cachedAtBoot.access_token); } catch {}
-  console.log("[supabase] JWT cacheado inyectado en sub-clientes");
+  try { supabase.realtime?.setAuth?.(_liveSession.access_token); } catch {}
+  console.log("[supabase] JWT cacheado inyectado + fetch estático activo");
+} else {
+  console.log("[supabase] sin sesión cacheada, fetch estático activo (anónimo)");
 }
+
+// Mantenemos la sesión viva sincronizada con cualquier cambio de auth.
+supabase.auth.onAuthStateChange((_event, session) => {
+  _liveSession = session || null;
+  const bearer = session?.access_token ? `Bearer ${session.access_token}` : null;
+  try {
+    if (supabase.rest?.headers) {
+      if (bearer) supabase.rest.headers.Authorization = bearer;
+      else delete supabase.rest.headers.Authorization;
+    }
+  } catch {}
+  try {
+    if (supabase.storage?.headers) {
+      if (bearer) supabase.storage.headers.Authorization = bearer;
+      else delete supabase.storage.headers.Authorization;
+    }
+  } catch {}
+});
+
+// Override de supabase.auth.getSession() para retornar la sesión viva al
+// instante. Evita que cualquier código que aún use el camino original quede
+// esperando a que GoTrueClient._initialize termine su Promise.
+const _origGetSession = supabase.auth.getSession.bind(supabase.auth);
+supabase.auth.getSession = async () => ({
+  data: { session: _liveSession },
+  error: null,
+});
+supabase.auth.__origGetSession = _origGetSession;
 
 // Fetch directo a PostgREST con el access_token cacheado, como fallback robusto
 // que NO depende del estado interno de supabase-js.
@@ -72,18 +130,14 @@ export async function fetchProfileDirect(userId, accessToken) {
   }
 }
 
-// Símbolo especial: getSession() lanza este error cuando se cumple el timeout,
-// para que refreshAuth no degrade una sesión válida a null por culpa de un
-// refresh de token lento o un cuelgue de red.
+// Símbolo especial: si en algún flujo getSession() se cuelga, devolvemos
+// este símbolo para que refreshAuth no descarte la sesión cacheada.
 export const GET_SESSION_TIMEOUT = Symbol("getSession timeout");
 
 export async function getSession() {
-  return Promise.race([
-    supabase.auth.getSession().then((r) => r?.data?.session ?? null),
-    new Promise((_, reject) =>
-      setTimeout(() => reject(GET_SESSION_TIMEOUT), 2500)
-    ),
-  ]);
+  // Con el override de supabase.auth.getSession ya es síncrono (retorna la
+  // sesión viva en memoria). Lo dejamos como Promise para no cambiar el API.
+  return _liveSession || null;
 }
 
 export async function getProfileFor(userId) {

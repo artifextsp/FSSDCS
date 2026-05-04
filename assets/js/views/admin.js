@@ -1,6 +1,6 @@
-import { clear, el, toast, confirmDialog, slugify, fmtScore, openModal } from "../utils.js?v=12";
-import { getAuthSnapshot, signInWithPassword, signOut } from "../auth.js?v=12";
-import { getCurrentEdition, setCurrentEdition } from "../state.js?v=12";
+import { clear, el, toast, confirmDialog, slugify, fmtScore, openModal } from "../utils.js?v=13";
+import { getAuthSnapshot, signInWithPassword, signOut } from "../auth.js?v=13";
+import { getCurrentEdition, setCurrentEdition } from "../state.js?v=13";
 import {
   listEditionsAccessible, createEdition, updateEdition,
   listProjects, getProjectFull, createProject, updateProject, deleteProject,
@@ -11,18 +11,20 @@ import {
   uploadProjectDocument, addProjectLink, deleteProjectDocument, resolveDocUrl,
   uploadTeamPhoto, deleteTeamPhoto, signedPhotoUrl, listTeamPhotos,
   listRanking,
-} from "../data.js?v=12";
-import { supabase } from "../supabase.js?v=12";
-import { parseFile } from "../parsers.js?v=12";
-import { navigate } from "../router.js?v=12";
+} from "../data.js?v=13";
+import { supabase } from "../supabase.js?v=13";
+import { parseFile } from "../parsers.js?v=13";
+import { navigate } from "../router.js?v=13";
 
 export async function renderAdmin({ section = "dashboard", projectId = null, teamId = null } = {}) {
+  console.log("[admin] renderAdmin start", { section, projectId, teamId });
   const main = document.querySelector("[data-app-main]");
   clear(main);
   const wrap = el("section", { class: "container" });
   main.append(wrap);
 
   const auth = getAuthSnapshot();
+  console.log("[admin] auth snapshot", { ready: auth.ready, hasSession: !!auth.session, role: auth.profile?.role });
   if (!auth.ready) {
     wrap.append(el("div", { class: "loading-screen" }, [
       el("div", { class: "spinner", "aria-hidden": "true" }),
@@ -50,7 +52,12 @@ export async function renderAdmin({ section = "dashboard", projectId = null, tea
     return;
   }
 
-  const editions = await listEditionsAccessible().catch(() => []);
+  console.log("[admin] fetching editions…");
+  const editions = await listEditionsAccessible().catch((e) => {
+    console.error("[admin] listEditionsAccessible failed", e);
+    return [];
+  });
+  console.log("[admin] editions:", editions.length);
   if (!getCurrentEdition() && editions.length) setCurrentEdition(editions[0]);
 
   const header = el("div", { class: "section-head" });

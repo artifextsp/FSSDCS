@@ -1,7 +1,7 @@
-import { clear, el, fmtScore, toast } from "../utils.js?v=12";
-import { getAuthSnapshot, signInWithPassword, signOut } from "../auth.js?v=12";
-import { listMyAssignedProjects } from "../data.js?v=12";
-import { supabase } from "../supabase.js?v=12";
+import { clear, el, fmtScore, toast } from "../utils.js?v=13";
+import { getAuthSnapshot, signInWithPassword, signOut } from "../auth.js?v=13";
+import { listMyAssignedProjects } from "../data.js?v=13";
+import { supabase } from "../supabase.js?v=13";
 
 export async function renderJury() {
   const main = document.querySelector("[data-app-main]");
