@@ -56,22 +56,10 @@ export async function renderLanding() {
     el("div", { class: "card card--pad-lg" }, [
       el("h2", { text: "Cómo funciona" }),
       el("div", { class: "grid", style: { gridTemplateColumns: "repeat(auto-fit, minmax(220px, 1fr))" } }, [
-        el("div", {}, [
-          el("h4", { text: "Sustentaciones" }),
-          el("p", { class: "text-muted", text: "Cuestionarios, entrevistas o evaluación por fases. Cada proyecto se configura a la medida." }),
-        ]),
-        el("div", {}, [
-          el("h4", { text: "Concurso de campo" }),
-          el("p", { class: "text-muted", text: "Rondas y modalidades flexibles. Las pruebas suman al ranking final." }),
-        ]),
-        el("div", {}, [
-          el("h4", { text: "Fotos en vivo" }),
-          el("p", { class: "text-muted", text: "Los jurados toman fotos desde el celular y alimentan el carrusel del proyecto." }),
-        ]),
-        el("div", {}, [
-          el("h4", { text: "Ranking instantáneo" }),
-          el("p", { class: "text-muted", text: "Los puntajes se sincronizan en tiempo real para toda la comunidad." }),
-        ]),
+        el("div", {}, [el("h4", { text: "Múltiples equipos por proyecto" }), el("p", { class: "text-muted", text: "Un mismo proyecto puede tener varios equipos compitiendo entre ellos. Cada equipo se evalúa por separado." })]),
+        el("div", {}, [el("h4", { text: "Sustentaciones" }), el("p", { class: "text-muted", text: "Cuestionarios, entrevistas o evaluación por fases. Cada proyecto se configura a la medida." })]),
+        el("div", {}, [el("h4", { text: "Concurso de campo" }), el("p", { class: "text-muted", text: "Rondas y modalidades flexibles. Las pruebas suman al ranking final." })]),
+        el("div", {}, [el("h4", { text: "Ranking instantáneo" }), el("p", { class: "text-muted", text: "Los puntajes se sincronizan en tiempo real para toda la comunidad." })]),
       ]),
     ]),
   ]);
@@ -80,32 +68,27 @@ export async function renderLanding() {
 
   if (!edition) return;
 
-  // Carga datos
   try {
     const [projects, ranking] = await Promise.all([
       listProjects(edition.id),
       listRanking(edition.id),
     ]);
-    projectsCountEl.textContent = projects.length;
-    teamsCountEl.textContent = projects.length; // 1:1 en MVP
+    projectsCountEl.textContent = String(projects.length);
+    teamsCountEl.textContent = String(ranking.length);
     topScoreEl.textContent = ranking[0] ? fmtScore(ranking[0].total_score) : "—";
 
     clear(featured);
     const cards = projects.slice(0, 6).map((p) => projectCard(p));
-    if (!cards.length) {
-      featured.append(el("div", { class: "empty", text: "Aún no hay proyectos publicados." }));
-    } else {
-      cards.forEach((c) => featured.append(c));
-    }
-  } catch (err) {
-    console.warn(err);
-  }
+    if (!cards.length) featured.append(el("div", { class: "empty", text: "Aún no hay proyectos publicados." }));
+    else cards.forEach((c) => featured.append(c));
+  } catch (err) { console.warn(err); }
 
   const unsub = subscribeTable({
-    table: "project_score_cache",
+    table: "team_score_cache",
     filter: `edition_id=eq.${edition.id}`,
     onChange: async () => {
       const r = await listRanking(edition.id).catch(() => []);
+      teamsCountEl.textContent = String(r.length);
       topScoreEl.textContent = r[0] ? fmtScore(r[0].total_score) : "—";
     },
   });
@@ -114,13 +97,9 @@ export async function renderLanding() {
 }
 
 function projectCard(p) {
-  const cover = el("div", { class: "project-card__cover project-card__cover--placeholder" });
-  return el("a", {
-    class: "project-card",
-    href: `#/proyectos/${p.id}`,
-  }, [
-    cover,
+  return el("a", { class: "project-card", href: `#/proyectos/${p.id}` }, [
+    el("div", { class: "project-card__cover project-card__cover--placeholder" }),
     el("div", { class: "project-card__title", text: p.name }),
-    el("div", { class: "project-card__meta", text: [p.grade_label, p.room].filter(Boolean).join(" · ") || "—" }),
+    el("div", { class: "project-card__meta", text: p.grade_label ? `Grado ${p.grade_label}` : "—" }),
   ]);
 }

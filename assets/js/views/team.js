@@ -14,9 +14,8 @@ export async function renderTeam() {
   const editions = await listEditionsAccessible().catch(() => []);
   const stored = getCurrentEdition();
   const slugSelect = el("select", { class: "select", required: true });
-  if (!editions.length) {
-    slugSelect.append(el("option", { value: "", text: "Sin ediciones disponibles" }));
-  } else {
+  if (!editions.length) slugSelect.append(el("option", { value: "", text: "Sin ediciones disponibles" }));
+  else {
     editions.forEach((e) => slugSelect.append(el("option", { value: e.slug, text: `${e.year} · ${e.name}` })));
     if (stored?.slug) slugSelect.value = stored.slug;
   }
@@ -47,14 +46,8 @@ export async function renderTeam() {
     }
   }}, [
     el("div", { class: "field-row field-row--2" }, [
-      el("div", { class: "field" }, [
-        el("label", { class: "field__label", text: "Edición" }),
-        slugSelect,
-      ]),
-      el("div", { class: "field" }, [
-        el("label", { class: "field__label", text: "Nombre del equipo" }),
-        nameInput,
-      ]),
+      el("div", { class: "field" }, [el("label", { class: "field__label", text: "Edición" }), slugSelect]),
+      el("div", { class: "field" }, [el("label", { class: "field__label", text: "Nombre del equipo" }), nameInput]),
     ]),
     el("button", { class: "btn btn--primary btn--lg", type: "submit", text: "Ver mi equipo" }),
   ]);
@@ -73,34 +66,36 @@ function errorMsg(code) {
 
 async function paintResult(root, r) {
   clear(root);
-  const { edition, project, team, members, documents, photos, scores, rank } = r;
+  const { project, team, members, documents, photos, scores, edition_rank, project_rank } = r;
 
   root.append(el("div", { class: "section-head" }, [
     el("div", {}, [
-      el("h2", { text: project.name }),
+      el("h2", { text: team.name }),
       el("p", { class: "text-muted", text: [
+        project.name,
         project.grade_label && `Grado ${project.grade_label}`,
-        project.room && `Aula ${project.room}`,
-        project.presentation_order && `Orden ${project.presentation_order}`,
+        team.room && `Aula ${team.room}`,
+        team.presentation_order != null && `Orden ${team.presentation_order}`,
       ].filter(Boolean).join(" · ") || "—" }),
     ]),
-    el("a", { class: "btn btn--ghost btn--sm", href: `#/proyectos/${project.id}`, text: "Vista pública" }),
+    el("a", { class: "btn btn--ghost btn--sm", href: `#/equipos/${team.id}`, text: "Vista pública del equipo" }),
   ]));
 
   root.append(el("div", { class: "tag-list mb-4" }, [
     el("span", { class: "pill pill--primary", text: `Sustentación: ${fmtScore(scores?.sustentation_avg)}` }),
     el("span", { class: "pill pill--primary", text: `Concurso: ${fmtScore(scores?.field_contest_avg)}` }),
     el("span", { class: "pill pill--accent", text: `Total: ${fmtScore(scores?.total_score)}` }),
-    rank ? el("span", { class: "pill", text: `Puesto: ${rank}` }) : null,
+    project_rank ? el("span", { class: "pill", text: `Puesto en el proyecto: ${project_rank}` }) : null,
+    edition_rank ? el("span", { class: "pill", text: `Puesto en la feria: ${edition_rank}` }) : null,
   ]));
 
   const grid = el("div", { class: "grid", style: { gridTemplateColumns: "minmax(0, 2fr) minmax(0, 1fr)", gap: "var(--space-4)" } });
   root.append(grid);
 
-  // Members
   const left = el("div", { class: "flex-col gap-4" });
   grid.append(left);
-  const memCard = el("div", { class: "card" }, [el("h3", { class: "card__title", text: `Equipo: ${team.name}` })]);
+
+  const memCard = el("div", { class: "card" }, [el("h3", { class: "card__title", text: `Integrantes` })]);
   if (members?.length) {
     const ul = el("ul", { style: { margin: 0, padding: 0, listStyle: "none" }, class: "flex-col gap-2" });
     members.forEach((m) => ul.append(el("li", { class: "muted-card", text: m.full_name })));
@@ -110,12 +105,11 @@ async function paintResult(root, r) {
 
   if (project.description) {
     left.append(el("div", { class: "card" }, [
-      el("h3", { class: "card__title", text: "Descripción" }),
+      el("h3", { class: "card__title", text: "Descripción del proyecto" }),
       el("p", { class: "text-muted", text: project.description }),
     ]));
   }
 
-  // Documents
   const right = el("div", { class: "flex-col gap-4" });
   grid.append(right);
 
@@ -123,13 +117,7 @@ async function paintResult(root, r) {
     const list = el("div", { class: "flex-col gap-2" });
     for (const d of documents) {
       const url = await signedDocUrl(d.storage_path).catch(() => null);
-      list.append(el("a", {
-        class: "btn btn--ghost",
-        href: url || "#",
-        target: "_blank",
-        rel: "noopener",
-        text: `📄 ${d.title}`,
-      }));
+      list.append(el("a", { class: "btn btn--ghost", href: url || "#", target: "_blank", rel: "noopener", text: `📄 ${d.title}` }));
     }
     right.append(el("div", { class: "card" }, [el("h3", { class: "card__title", text: "Documentos" }), list]));
   }
@@ -142,6 +130,6 @@ async function paintResult(root, r) {
       if (url) slide.append(el("img", { src: url, alt: "", loading: "lazy", style: { width: "100%", height: "100%", objectFit: "cover" } }));
       grid2.append(slide);
     }
-    right.append(el("div", { class: "card" }, [el("h3", { class: "card__title", text: "Fotos" }), grid2]));
+    right.append(el("div", { class: "card" }, [el("h3", { class: "card__title", text: "Fotos del equipo" }), grid2]));
   }
 }

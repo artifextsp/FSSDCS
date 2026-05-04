@@ -1,6 +1,6 @@
-import { clear, el, escapeHTML } from "../utils.js";
+import { clear, el } from "../utils.js";
 import { getCurrentEdition } from "../state.js";
-import { listProjects } from "../data.js";
+import { listProjects, listTeamsByProject } from "../data.js";
 
 export async function renderProjects() {
   const main = document.querySelector("[data-app-main]");
@@ -19,8 +19,7 @@ export async function renderProjects() {
       }),
     ]),
     el("input", {
-      class: "input",
-      placeholder: "Buscar por nombre o grado…",
+      class: "input", placeholder: "Buscar por nombre o grado…",
       style: { maxWidth: "320px" },
       oninput: (e) => filter(e.target.value),
     }),
@@ -35,45 +34,39 @@ export async function renderProjects() {
   }
 
   let all = [];
-  try {
-    all = await listProjects(edition.id);
-  } catch (err) {
-    grid.append(el("div", { class: "error-banner", text: "No se pudieron cargar los proyectos." }));
-    return;
+  try { all = await listProjects(edition.id); }
+  catch (err) {
+    grid.append(el("div", { class: "error-banner", text: "No se pudieron cargar los proyectos." })); return;
   }
+
+  const teamCounts = {};
+  await Promise.all(all.map(async (p) => { teamCounts[p.id] = (await listTeamsByProject(p.id).catch(() => [])).length; }));
+
   paint(all);
 
   function paint(list) {
     clear(grid);
-    if (!list.length) {
-      grid.append(el("div", { class: "empty", text: "No hay proyectos publicados todavía." }));
-      return;
-    }
-    list.forEach((p) => grid.append(projectCard(p)));
+    if (!list.length) { grid.append(el("div", { class: "empty", text: "No hay proyectos publicados todavía." })); return; }
+    list.forEach((p) => grid.append(projectCard(p, teamCounts[p.id] ?? 0)));
   }
   function filter(q) {
     const t = (q || "").trim().toLowerCase();
     if (!t) return paint(all);
     paint(all.filter((p) =>
-      [p.name, p.grade_label, p.room, p.description].filter(Boolean).join(" ").toLowerCase().includes(t)
+      [p.name, p.grade_label, p.description].filter(Boolean).join(" ").toLowerCase().includes(t)
     ));
   }
 }
 
-function projectCard(p) {
-  return el("a", {
-    class: "project-card",
-    href: `#/proyectos/${p.id}`,
-  }, [
+function projectCard(p, teamCount) {
+  return el("a", { class: "project-card", href: `#/proyectos/${p.id}` }, [
     el("div", { class: "project-card__cover project-card__cover--placeholder" }),
     el("div", { class: "project-card__title", text: p.name }),
     el("div", { class: "project-card__meta", text: [
       p.grade_label && `Grado: ${p.grade_label}`,
-      p.room && `Aula: ${p.room}`,
-      p.presentation_order && `Orden: ${p.presentation_order}`,
+      teamCount != null && `${teamCount} equipo(s)`,
     ].filter(Boolean).join(" · ") || "—" }),
     p.description ? el("p", { class: "text-muted", text: truncate(p.description, 110) }) : null,
   ]);
 }
-
 function truncate(s, n) { return s.length > n ? s.slice(0, n - 1) + "…" : s; }

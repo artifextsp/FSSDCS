@@ -30,6 +30,8 @@ import { renderRanking } from "./views/public_ranking.js";
 import { renderTeam } from "./views/team.js";
 import { renderJury } from "./views/jury.js";
 import { renderJuryEvaluate } from "./views/jury_evaluate.js";
+import { renderJuryTeamEvaluate } from "./views/jury_evaluate.js";
+import { renderPublicTeam } from "./views/public_team.js";
 import { renderAdmin } from "./views/admin.js";
 
 /* ---- Header interactions ---- */
@@ -71,13 +73,16 @@ onAuthChange(paintAuth);
 defineRoute("/", () => renderLanding());
 defineRoute("/proyectos", () => renderProjects());
 defineRoute("/proyectos/:id", ({ params }) => renderProject(params.id));
+defineRoute("/equipos/:id", ({ params }) => renderPublicTeam(params.id));
 defineRoute("/ranking", () => renderRanking());
 defineRoute("/equipo", () => renderTeam());
 defineRoute("/jurado", () => renderJury());
 defineRoute("/jurado/proyecto/:id", ({ params }) => renderJuryEvaluate(params.id));
+defineRoute("/jurado/equipo/:id", ({ params }) => renderJuryTeamEvaluate(params.id));
 defineRoute("/admin", () => renderAdmin({ section: "dashboard" }));
-defineRoute("/admin/:section", ({ params }) => renderAdmin({ section: params.section }));
 defineRoute("/admin/proyectos/:id", ({ params }) => renderAdmin({ section: "proyecto", projectId: params.id }));
+defineRoute("/admin/equipos/:id", ({ params }) => renderAdmin({ section: "team", teamId: params.id }));
+defineRoute("/admin/:section", ({ params }) => renderAdmin({ section: params.section }));
 
 /* ---- Boot ---- */
 function withTimeout(promise, ms, label) {

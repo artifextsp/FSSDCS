@@ -1,20 +1,25 @@
 import { clear, el, fmtScore, toast, confirmDialog } from "../utils.js";
 import { getAuthSnapshot } from "../auth.js";
 import {
-  getProjectFull,
+  getProject,
+  listTeamsByProject,
+  listTeamMembers,
+  getTeamFull,
   getMyEvaluatorIdForEdition,
   getOrCreateEvaluation,
   listAnswers,
   upsertAnswer,
   setEvaluationStatus,
-  uploadProjectPhoto,
-  deleteProjectPhoto,
+  uploadTeamPhoto,
+  deleteTeamPhoto,
   signedPhotoUrl,
+  listConfigs,
 } from "../data.js";
 
 import { navigate } from "../router.js";
 import { subscribeTable } from "../realtime.js";
 
+/* ============ Pantalla 1: Lista de equipos del proyecto a evaluar ============ */
 export async function renderJuryEvaluate(projectId) {
   const main = document.querySelector("[data-app-main]");
   clear(main);
@@ -24,40 +29,94 @@ export async function renderJuryEvaluate(projectId) {
   const auth = getAuthSnapshot();
   if (!auth.session) { navigate("/jurado"); return; }
 
-  wrap.append(el("a", { class: "btn btn--ghost btn--sm", href: "#/jurado", text: "← Volver" }));
-  const status = el("p", { class: "text-muted mt-3", text: "Cargando proyecto…" });
-  wrap.append(status);
+  wrap.append(el("a", { class: "btn btn--ghost btn--sm", href: "#/jurado", text: "← Volver a mis proyectos" }));
+
+  let project, teams, configs;
+  try {
+    project = await getProject(projectId);
+    teams = await listTeamsByProject(projectId);
+    configs = await listConfigs(projectId);
+  } catch (e) {
+    wrap.append(el("div", { class: "error-banner mt-3", text: "Error cargando el proyecto." })); return;
+  }
+  if (!project) { wrap.append(el("div", { class: "empty mt-3", text: "Proyecto no encontrado." })); return; }
+
+  wrap.append(el("h1", { class: "mt-3", text: project.name }));
+  wrap.append(el("p", { class: "text-muted", text: project.grade_label ? `Grado: ${project.grade_label}` : "" }));
+
+  if (!configs?.filter((c) => c.is_active).length) {
+    wrap.append(el("div", { class: "empty mt-4", text: "El administrador aún no configuró la metodología de evaluación." }));
+    return;
+  }
+
+  wrap.append(el("h2", { class: "mt-4", text: "Equipos a evaluar" }));
+  wrap.append(el("p", { class: "text-muted", text: `Selecciona el equipo que vas a evaluar. Cada equipo se califica por separado.` }));
+
+  if (!teams.length) {
+    wrap.append(el("div", { class: "empty mt-4", text: "Este proyecto aún no tiene equipos registrados." }));
+    return;
+  }
+
+  const grid = el("div", { class: "grid grid--cards mt-3" });
+  wrap.append(grid);
+  for (const t of teams) {
+    const memberCount = (await listTeamMembers(t.id).catch(() => [])).length;
+    grid.append(el("a", { class: "project-card", href: `#/jurado/equipo/${t.id}` }, [
+      el("div", { class: "project-card__cover project-card__cover--placeholder" }),
+      el("div", { class: "project-card__title", text: t.name }),
+      el("div", { class: "project-card__meta", text: [
+        t.room && `Aula ${t.room}`,
+        t.presentation_order != null && `Orden ${t.presentation_order}`,
+        `${memberCount} integrante(s)`,
+      ].filter(Boolean).join(" · ") || "—" }),
+      el("div", { class: "btn btn--primary btn--sm", text: "Evaluar →" }),
+    ]));
+  }
+}
+
+/* ============ Pantalla 2: Evaluación del equipo ============ */
+export async function renderJuryTeamEvaluate(teamId) {
+  const main = document.querySelector("[data-app-main]");
+  clear(main);
+  const wrap = el("section", { class: "container" });
+  main.append(wrap);
+
+  const auth = getAuthSnapshot();
+  if (!auth.session) { navigate("/jurado"); return; }
 
   let bundle;
-  try { bundle = await getProjectFull(projectId); }
-  catch (e) { status.textContent = "Error cargando el proyecto."; return; }
-  if (!bundle?.project) { status.textContent = "Proyecto no encontrado."; return; }
-  const { project, configs, photos } = bundle;
-  clear(wrap);
-  wrap.append(el("a", { class: "btn btn--ghost btn--sm", href: "#/jurado", text: "← Volver" }));
+  try { bundle = await getTeamFull(teamId); }
+  catch (e) {
+    wrap.append(el("div", { class: "error-banner", text: "Error cargando el equipo." })); return;
+  }
+  if (!bundle?.team) { wrap.append(el("div", { class: "empty", text: "Equipo no encontrado." })); return; }
+  const { team, project, configs, photos } = bundle;
 
+  wrap.append(el("a", { class: "btn btn--ghost btn--sm", href: `#/jurado/proyecto/${project.id}`, text: `← ${project.name}` }));
   wrap.append(el("div", { class: "section-head", style: { marginTop: "var(--space-3)" } }, [
     el("div", {}, [
-      el("h1", { text: project.name }),
-      el("p", { class: "text-muted", text: [project.grade_label, project.room].filter(Boolean).join(" · ") || "—" }),
+      el("h1", { text: team.name }),
+      el("p", { class: "text-muted", text: [
+        project.name,
+        team.room && `Aula ${team.room}`,
+        team.presentation_order != null && `Orden ${team.presentation_order}`,
+      ].filter(Boolean).join(" · ") }),
     ]),
   ]));
 
   let evaluatorId;
-  try { evaluatorId = await getMyEvaluatorIdForEdition(project.edition_id); }
-  catch (e) {}
+  try { evaluatorId = await getMyEvaluatorIdForEdition(project.edition_id); } catch (e) {}
   if (!evaluatorId) {
-    wrap.append(el("div", { class: "error-banner", text: "Tu cuenta no está registrada como jurado de esta edición." }));
+    wrap.append(el("div", { class: "error-banner", text: "Tu cuenta no está asignada como jurado de esta edición." }));
     return;
   }
 
-  // Tabs por fase (sustentation / field_contest)
   const tabs = el("div", { class: "tabs" });
   const panels = el("div");
   wrap.append(tabs, panels);
 
   const photosCard = el("div", { class: "card mt-5" }, [
-    el("h3", { class: "card__title", text: "Fotos del proyecto" }),
+    el("h3", { class: "card__title", text: "Fotos del equipo" }),
   ]);
   wrap.append(photosCard);
 
@@ -66,17 +125,16 @@ export async function renderJuryEvaluate(projectId) {
     panels.append(el("div", { class: "empty", text: "El administrador aún no configura la evaluación de este proyecto." }));
   } else {
     phases.forEach((cfg, idx) => {
-      const btn = el("button", {
+      tabs.append(el("button", {
         class: `tabs__btn ${idx === 0 ? "is-active" : ""}`,
         text: phaseLabel(cfg.phase),
         onclick: () => activate(idx),
-      });
-      tabs.append(btn);
+      }));
     });
     phases.forEach((cfg, idx) => {
       const panel = el("div", { class: idx === 0 ? "" : "visually-hidden" });
       panels.append(panel);
-      mountConfigForm(panel, cfg, { project, evaluatorId });
+      mountConfigForm(panel, cfg, { team, project, evaluatorId });
     });
     function activate(i) {
       Array.from(tabs.children).forEach((c, ci) => c.classList.toggle("is-active", ci === i));
@@ -84,11 +142,11 @@ export async function renderJuryEvaluate(projectId) {
     }
   }
 
-  await mountPhotosBlock(photosCard, project, photos);
+  await mountPhotosBlock(photosCard, team, photos);
 }
 
 /* ---------------- Form per config ---------------- */
-async function mountConfigForm(root, cfg, { project, evaluatorId }) {
+async function mountConfigForm(root, cfg, { team, project, evaluatorId }) {
   const head = el("div", { class: "flex items-center gap-2 mb-3" }, [
     el("span", { class: "pill", text: methodLabel(cfg.method_type) }),
     el("span", { class: "text-muted", text: `Escala: ${cfg.scale_min}–${cfg.scale_max}` }),
@@ -98,13 +156,13 @@ async function mountConfigForm(root, cfg, { project, evaluatorId }) {
   let evaluation;
   try {
     evaluation = await getOrCreateEvaluation({
-      projectId: project.id,
+      teamId: team.id,
       evaluatorId,
       configId: cfg.id,
       phase: cfg.phase,
     });
   } catch (e) {
-    root.append(el("div", { class: "error-banner", text: "No se pudo iniciar la evaluación." }));
+    root.append(el("div", { class: "error-banner", text: "No se pudo iniciar la evaluación: " + (e?.message || "") }));
     return;
   }
   let answers = await listAnswers(evaluation.id).catch(() => []);
@@ -116,7 +174,6 @@ async function mountConfigForm(root, cfg, { project, evaluatorId }) {
   const form = el("div", { class: "flex-col gap-3" });
   root.append(form);
 
-  // Preguntas con randomPickCount
   const finalItems = applyRandomPick(cfg, items, answers);
 
   finalItems.forEach((it) => form.append(itemRow(it, {
@@ -131,7 +188,6 @@ async function mountConfigForm(root, cfg, { project, evaluatorId }) {
           observation: patch.observation,
           meta: patch.meta || {},
         });
-        // Update local state
         const i = answers.findIndex((a) => a.item_key === it.item_key);
         if (i >= 0) answers[i] = saved; else answers.push(saved);
         toast("Guardado", "success", 1200);
@@ -146,9 +202,8 @@ async function mountConfigForm(root, cfg, { project, evaluatorId }) {
     placeholder: "Observaciones generales (opcional)",
     value: evaluation.notes || "",
     onblur: async (e) => {
-      try {
-        evaluation = await setEvaluationStatus(evaluation.id, evaluation.status, e.target.value);
-      } catch (err) { toast("No se pudo guardar la nota", "error"); }
+      try { evaluation = await setEvaluationStatus(evaluation.id, evaluation.status, e.target.value); }
+      catch (err) { toast("No se pudo guardar la nota", "error"); }
     },
   });
 
@@ -169,7 +224,6 @@ async function mountConfigForm(root, cfg, { project, evaluatorId }) {
   ]);
   root.append(notes, actions);
 
-  // Subscribe to score updates to keep total live
   const unsub = subscribeTable({
     table: "evaluations",
     filter: `id=eq.${evaluation.id}`,
@@ -180,7 +234,6 @@ async function mountConfigForm(root, cfg, { project, evaluatorId }) {
       paintStatus();
     },
   });
-  root.dataset.cleanup = "1";
   root._cleanup = () => unsub?.();
 
   function paintStatus() {
@@ -199,7 +252,6 @@ function statusPill(s) {
   return node;
 }
 
-/* ---------------- Build items per method_type ---------------- */
 function buildItems(cfg) {
   const m = cfg.method_type;
   const c = cfg.config || {};
@@ -262,10 +314,6 @@ function clampMax(maxScore, cfg) {
   return Math.min(Math.max(v, cfg.scale_min), cfg.scale_max);
 }
 
-/**
- * Si method_type=questionnaire y config.questionnaire?.randomPickCount > 0, fija una selección
- * estable por evaluación basada en respuestas existentes; si aún no hay, elige aleatoriamente.
- */
 function applyRandomPick(cfg, items, answers) {
   const pickCount =
     cfg.method_type === "questionnaire" ? Number(cfg.config?.randomPickCount || 0) :
@@ -277,18 +325,14 @@ function applyRandomPick(cfg, items, answers) {
   const otherItems = items.filter((x) => !isQ(x));
 
   const answeredKeys = new Set(answers.map((a) => a.item_key).filter((k) => k.startsWith("q:")));
-  // If we already have answers for some, keep those; otherwise pick at random
   let chosen;
   if (answeredKeys.size) {
     chosen = qItems.filter((it) => answeredKeys.has(it.item_key));
-    // pad if fewer than pickCount
     if (chosen.length < pickCount) {
       const pool = qItems.filter((it) => !answeredKeys.has(it.item_key));
       shuffle(pool);
       chosen = chosen.concat(pool.slice(0, pickCount - chosen.length));
-    } else {
-      chosen = chosen.slice(0, pickCount);
-    }
+    } else { chosen = chosen.slice(0, pickCount); }
   } else {
     const pool = [...qItems];
     shuffle(pool);
@@ -304,7 +348,6 @@ function shuffle(arr) {
   }
 }
 
-/* ---------------- Item row ---------------- */
 function itemRow(item, { cfg, answer, onChange }) {
   const card = el("div", { class: "card card--pad-sm flex-col gap-3" });
   card.append(el("div", { class: "flex items-center gap-2" }, [
@@ -320,16 +363,12 @@ function itemRow(item, { cfg, answer, onChange }) {
   const max = item.maxScore ?? cfg.scale_max ?? 5;
   const scoreInput = el("div", { class: "score-input" });
   const buttons = [];
-  // Para escalas grandes (>10), usar input numérico + slider
   if (max - min > 10) {
     const num = el("input", {
       class: "input", type: "number", min, max, step: "0.5",
       value: currentScore ?? "",
       placeholder: `Puntaje (${min}–${max})`,
-      oninput: () => {
-        const v = clampNum(num.value, min, max);
-        if (v !== null) currentScore = v;
-      },
+      oninput: () => { const v = clampNum(num.value, min, max); if (v !== null) currentScore = v; },
       onchange: () => onChange({ score: currentScore, observation: currentObs }),
     });
     scoreInput.append(num);
@@ -365,40 +404,35 @@ function itemRow(item, { cfg, answer, onChange }) {
 }
 
 function typeLabel(t) {
-  return ({
-    questionnaire: "Pregunta", interview: "Entrevista", phase: "Fase",
-    round: "Ronda", modality: "Modalidad",
-  })[t] || t;
+  return ({ questionnaire: "Pregunta", interview: "Entrevista", phase: "Fase", round: "Ronda", modality: "Modalidad" })[t] || t;
 }
 function methodLabel(m) {
   return ({
     questionnaire: "Cuestionario", interview: "Entrevista",
     questionnaire_interview: "Cuestionario + Entrevista",
-    process_phases: "Fases del proceso",
-    process_phases_interview: "Fases + Entrevista",
+    process_phases: "Fases del proceso", process_phases_interview: "Fases + Entrevista",
     field_rounds: "Rondas de concurso",
   })[m] || m;
 }
-function phaseLabel(p) {
-  return p === "sustentation" ? "Sustentación" : p === "field_contest" ? "Concurso de campo" : p;
-}
+function phaseLabel(p) { return p === "sustentation" ? "Sustentación" : p === "field_contest" ? "Concurso de campo" : p; }
 function clampNum(v, min, max) {
-  const n = Number(v);
-  if (!Number.isFinite(n)) return null;
+  const n = Number(v); if (!Number.isFinite(n)) return null;
   return Math.min(Math.max(n, min), max);
 }
 
-/* ---------------- Photos block ---------------- */
-async function mountPhotosBlock(card, project, photos) {
+/* ---------------- Photos block (por equipo) ---------------- */
+async function mountPhotosBlock(card, team, initialPhotos) {
   const grid = el("div", { class: "grid", style: { gridTemplateColumns: "repeat(auto-fill, minmax(120px, 1fr))" } });
   card.append(grid);
 
-  async function paint(list) {
+  let photos = [...(initialPhotos || [])];
+
+  async function paint() {
     clear(grid);
-    if (!list.length) {
+    if (!photos.length) {
       grid.append(el("div", { class: "empty", style: { gridColumn: "1/-1" }, text: "Aún no hay fotos." }));
     } else {
-      for (const p of list) {
+      for (const p of photos) {
         const url = await signedPhotoUrl(p.storage_path).catch(() => null);
         const box = el("div", { style: { position: "relative", aspectRatio: "1/1", borderRadius: "12px", overflow: "hidden", background: "#000" } });
         if (url) box.append(el("img", { src: url, alt: "", loading: "lazy", style: { width: "100%", height: "100%", objectFit: "cover" } }));
@@ -409,7 +443,7 @@ async function mountPhotosBlock(card, project, photos) {
           onclick: async () => {
             const ok = await confirmDialog("¿Eliminar esta foto?", { okLabel: "Eliminar", danger: true });
             if (!ok) return;
-            try { await deleteProjectPhoto(p); toast("Foto eliminada", "success"); refresh(); }
+            try { await deleteTeamPhoto(p); photos = photos.filter((x) => x.id !== p.id); paint(); toast("Foto eliminada", "success"); }
             catch (e) { toast("No se pudo eliminar", "error"); }
           },
         });
@@ -424,28 +458,26 @@ async function mountPhotosBlock(card, project, photos) {
   fileInput.addEventListener("change", async () => {
     const file = fileInput.files?.[0]; if (!file) return;
     try {
-      await uploadProjectPhoto({ projectId: project.id, file });
+      const ph = await uploadTeamPhoto({ teamId: team.id, file });
+      photos.push(ph);
+      paint();
       toast("Foto subida", "success");
-      refresh();
     } catch (e) { toast("No se pudo subir: " + (e.message || ""), "error"); }
     finally { fileInput.value = ""; }
   });
   card.append(uploadBtn, fileInput);
 
-  await paint(photos);
+  await paint();
 
-  let cur = photos;
-  async function refresh() {
-    try {
-      const fresh = await getProjectFull(project.id);
-      cur = fresh.photos || [];
-      await paint(cur);
-    } catch {}
-  }
-  // Realtime
   subscribeTable({
-    table: "project_photos",
-    filter: `project_id=eq.${project.id}`,
-    onChange: refresh,
+    table: "team_photos",
+    filter: `team_id=eq.${team.id}`,
+    onChange: async () => {
+      try {
+        const fresh = await getTeamFull(team.id);
+        photos = fresh.photos || [];
+        paint();
+      } catch {}
+    },
   });
 }
