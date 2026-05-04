@@ -354,6 +354,21 @@ export async function uploadProjectDocument({ projectId, file, title }) {
   return data;
 }
 
+export async function addProjectLink({ projectId, title, url }) {
+  const clean = String(url || "").trim();
+  if (!clean) throw new Error("La URL es obligatoria.");
+  let normalized = clean;
+  if (!/^https?:\/\//i.test(normalized)) normalized = "https://" + normalized;
+  try { new URL(normalized); } catch { throw new Error("URL inválida."); }
+  const { data, error } = await supabase
+    .from("project_documents")
+    .insert({ project_id: projectId, external_url: normalized, title: (title || normalized).trim() })
+    .select("*")
+    .single();
+  if (error) throw error;
+  return data;
+}
+
 export async function deleteProjectDocument(doc) {
   if (doc.storage_path) await supabase.storage.from("project-documents").remove([doc.storage_path]);
   const { error } = await supabase.from("project_documents").delete().eq("id", doc.id);
@@ -365,6 +380,14 @@ export async function signedDocUrl(path, ttl = 3600) {
   const { data, error } = await supabase.storage.from("project-documents").createSignedUrl(path, ttl);
   if (error) return null;
   return data?.signedUrl ?? null;
+}
+
+// Devuelve la URL pública del documento, sea archivo subido o enlace externo.
+export async function resolveDocUrl(doc) {
+  if (!doc) return null;
+  if (doc.external_url) return doc.external_url;
+  if (doc.storage_path) return await signedDocUrl(doc.storage_path);
+  return null;
 }
 
 /* ---------------- Evaluators / Assignments ---------------- */

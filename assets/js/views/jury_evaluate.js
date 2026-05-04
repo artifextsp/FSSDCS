@@ -29,7 +29,7 @@ export async function renderJuryEvaluate(projectId) {
   const auth = getAuthSnapshot();
   if (!auth.ready) {
     wrap.append(el("div", { class: "loading-screen" }, [
-      el("div", { class: "spinner", attrs: { "aria-hidden": "true" } }),
+      el("div", { class: "spinner", "aria-hidden": "true" }),
       el("p", { text: "Verificando sesión…" }),
     ]));
     return;
@@ -91,7 +91,7 @@ export async function renderJuryTeamEvaluate(teamId) {
   const auth = getAuthSnapshot();
   if (!auth.ready) {
     wrap.append(el("div", { class: "loading-screen" }, [
-      el("div", { class: "spinner", attrs: { "aria-hidden": "true" } }),
+      el("div", { class: "spinner", "aria-hidden": "true" }),
       el("p", { text: "Verificando sesión…" }),
     ]));
     return;

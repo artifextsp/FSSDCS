@@ -1,5 +1,5 @@
 import { clear, el, fmtScore } from "../utils.js";
-import { getProjectFull, listProjectRanking, signedDocUrl, signedPhotoUrl } from "../data.js";
+import { getProjectFull, listProjectRanking, resolveDocUrl, signedPhotoUrl } from "../data.js";
 import { subscribeTable } from "../realtime.js";
 
 export async function renderProject(id) {
@@ -104,11 +104,12 @@ export async function renderProject(id) {
   if (docs?.length) {
     const list = el("div", { class: "flex-col gap-2" });
     for (const d of docs) {
-      const url = await signedDocUrl(d.storage_path).catch(() => null);
-      list.append(el("a", { class: "btn btn--ghost", href: url || "#", target: "_blank", rel: "noopener", text: `📄 ${d.title}` }));
+      const url = await resolveDocUrl(d).catch(() => null);
+      const icon = d.external_url ? "🔗" : "📄";
+      list.append(el("a", { class: "btn btn--ghost", href: url || "#", target: "_blank", rel: "noopener", text: `${icon} ${d.title}` }));
     }
     right.append(el("div", { class: "card" }, [
-      el("h3", { class: "card__title", text: "Documentos" }), list,
+      el("h3", { class: "card__title", text: "Documentos y enlaces" }), list,
     ]));
   }
 

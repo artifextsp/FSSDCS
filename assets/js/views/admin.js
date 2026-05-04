@@ -8,7 +8,7 @@ import {
   replaceTeamMembers, listTeamMembers,
   listEvaluators, setAssignment, listAssignmentsForEdition,
   listConfigs, upsertActiveConfig,
-  uploadProjectDocument, deleteProjectDocument, signedDocUrl,
+  uploadProjectDocument, addProjectLink, deleteProjectDocument, resolveDocUrl,
   uploadTeamPhoto, deleteTeamPhoto, signedPhotoUrl, listTeamPhotos,
   listRanking,
 } from "../data.js";
@@ -25,7 +25,7 @@ export async function renderAdmin({ section = "dashboard", projectId = null, tea
   const auth = getAuthSnapshot();
   if (!auth.ready) {
     wrap.append(el("div", { class: "loading-screen" }, [
-      el("div", { class: "spinner", attrs: { "aria-hidden": "true" } }),
+      el("div", { class: "spinner", "aria-hidden": "true" }),
       el("p", { text: "Verificando sesión…" }),
     ]));
     return;
@@ -736,9 +736,17 @@ async function mountDocs(root, project, docs) {
     clear(list);
     if (!docs.length) list.append(el("div", { class: "empty", text: "Sin documentos." }));
     for (const d of docs) {
-      const url = await signedDocUrl(d.storage_path).catch(() => null);
-      list.append(el("div", { class: "muted-card flex items-center justify-between" }, [
-        el("a", { href: url || "#", target: "_blank", rel: "noopener", text: d.title }),
+      const url = await resolveDocUrl(d).catch(() => null);
+      const icon = d.external_url ? "🔗" : "📄";
+      const typeLabel = d.external_url ? "Enlace" : "Archivo";
+      const meta = d.external_url
+        ? new URL(d.external_url).hostname.replace(/^www\./, "")
+        : (d.storage_path?.split("/").pop() || "");
+      list.append(el("div", { class: "muted-card flex items-center justify-between gap-2" }, [
+        el("div", { class: "flex-col" }, [
+          el("a", { href: url || "#", target: "_blank", rel: "noopener", text: `${icon} ${d.title}` }),
+          el("span", { class: "text-muted", style: { fontSize: "0.8rem" }, text: `${typeLabel} · ${meta}` }),
+        ]),
         el("button", { class: "btn btn--danger btn--sm", text: "Eliminar", onclick: async () => {
           const ok = await confirmDialog("¿Eliminar este documento?", { okLabel: "Eliminar", danger: true });
           if (!ok) return;
@@ -757,12 +765,51 @@ async function mountDocs(root, project, docs) {
     catch (e) { toast("Error: " + (e?.message || ""), "error"); }
     finally { fileInput.value = ""; }
   });
+
+  async function openAddLinkModal() {
+    const titleInput = el("input", { class: "input", placeholder: "p. ej. Guía del proyecto" });
+    const urlInput = el("input", { class: "input", type: "url", placeholder: "https://ejemplo.com/guia" });
+    const form = el("div", { class: "flex-col gap-3" }, [
+      el("label", { class: "field" }, [el("span", { text: "Título" }), titleInput]),
+      el("label", { class: "field" }, [
+        el("span", { text: "URL del enlace" }),
+        urlInput,
+        el("span", { class: "text-muted", style: { fontSize: "0.8rem" }, text: "Acepta páginas web, Google Docs, Drive, YouTube, etc." }),
+      ]),
+    ]);
+    await openModal({
+      title: "Agregar enlace al proyecto",
+      body: form,
+      actions: [
+        { label: "Cancelar", onClick: () => null },
+        {
+          label: "Agregar",
+          variant: "primary",
+          onClick: async () => {
+            const title = titleInput.value.trim();
+            const url = urlInput.value.trim();
+            if (!title) throw new Error("El título es obligatorio.");
+            if (!url) throw new Error("La URL es obligatoria.");
+            const d = await addProjectLink({ projectId: project.id, title, url });
+            docs.push(d);
+            paint();
+            toast("Enlace agregado", "success");
+            return true;
+          },
+        },
+      ],
+    });
+  }
+
   root.append(el("div", { class: "card" }, [
     el("div", { class: "section-head" }, [
-      el("h3", { class: "card__title", text: "Documentos del proyecto" }),
-      el("button", { class: "btn btn--primary btn--sm", text: "+ Subir documento", onclick: () => fileInput.click() }),
+      el("h3", { class: "card__title", text: "Documentos y enlaces del proyecto" }),
+      el("div", { class: "flex gap-2", style: { flexWrap: "wrap" } }, [
+        el("button", { class: "btn btn--ghost btn--sm", text: "+ Agregar enlace", onclick: openAddLinkModal }),
+        el("button", { class: "btn btn--primary btn--sm", text: "+ Subir archivo", onclick: () => fileInput.click() }),
+      ]),
     ]),
-    el("p", { class: "text-muted", style: { fontSize: "0.85rem" }, text: "Estos documentos están disponibles para todos los equipos del proyecto." }),
+    el("p", { class: "text-muted", style: { fontSize: "0.85rem" }, text: "Disponibles para todos los equipos del proyecto. Puedes subir archivos (PDF, imagen) o agregar enlaces a páginas web." }),
     list, fileInput,
   ]));
 }

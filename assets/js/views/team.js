@@ -1,5 +1,5 @@
 import { clear, el, fmtScore, toast } from "../utils.js";
-import { listEditionsAccessible, teamPortalLookup, signedPhotoUrl, signedDocUrl } from "../data.js";
+import { listEditionsAccessible, teamPortalLookup, signedPhotoUrl, resolveDocUrl } from "../data.js";
 import { getCurrentEdition, setCurrentEdition } from "../state.js";
 
 export async function renderTeam() {
@@ -116,10 +116,11 @@ async function paintResult(root, r) {
   if (documents?.length) {
     const list = el("div", { class: "flex-col gap-2" });
     for (const d of documents) {
-      const url = await signedDocUrl(d.storage_path).catch(() => null);
-      list.append(el("a", { class: "btn btn--ghost", href: url || "#", target: "_blank", rel: "noopener", text: `📄 ${d.title}` }));
+      const url = await resolveDocUrl(d).catch(() => null);
+      const icon = d.external_url ? "🔗" : "📄";
+      list.append(el("a", { class: "btn btn--ghost", href: url || "#", target: "_blank", rel: "noopener", text: `${icon} ${d.title}` }));
     }
-    right.append(el("div", { class: "card" }, [el("h3", { class: "card__title", text: "Documentos" }), list]));
+    right.append(el("div", { class: "card" }, [el("h3", { class: "card__title", text: "Documentos y enlaces" }), list]));
   }
 
   if (photos?.length) {
