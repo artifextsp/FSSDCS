@@ -1,7 +1,7 @@
-import { clear, el, fmtScore, toast } from "../utils.js?v=13";
-import { getAuthSnapshot, signInWithPassword, signOut } from "../auth.js?v=13";
-import { listMyAssignedProjects } from "../data.js?v=13";
-import { supabase } from "../supabase.js?v=13";
+import { clear, el, fmtScore, toast } from "../utils.js?v=14";
+import { getAuthSnapshot, signInWithPassword, signOut } from "../auth.js?v=14";
+import { listMyAssignedProjects } from "../data.js?v=14";
+import { supabase } from "../supabase.js?v=14";
 
 export async function renderJury() {
   const main = document.querySelector("[data-app-main]");
@@ -88,12 +88,12 @@ function paintLogin(root) {
     }
   }}, [
     el("h1", { text: "Acceso jurado" }),
-    el("p", { class: "text-muted mb-3", text: "Inicia sesión con la cuenta que te entregó el administrador." }),
+    el("p", { class: "text-muted mb-3", text: "Inicia sesión con el correo y la contraseña que te envió el administrador." }),
     el("div", { class: "field" }, [el("label", { class: "field__label", text: "Correo" }), emailEl]),
     el("div", { class: "field" }, [el("label", { class: "field__label", text: "Contraseña" }), passEl]),
     errBox,
     el("button", { class: "btn btn--primary btn--lg btn--block", type: "submit", text: "Entrar" }),
-    el("p", { class: "text-soft mt-3", style: { fontSize: "0.8rem", textAlign: "center" }, text: "¿Es tu primera vez? El administrador debe crearte la cuenta y asignarte como jurado en una edición." }),
+    el("p", { class: "text-soft mt-3", style: { fontSize: "0.8rem", textAlign: "center" }, text: "¿No te llegaron tus credenciales? Pídele al administrador que cree tu cuenta." }),
   ]);
   root.append(form);
 }

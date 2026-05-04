@@ -1,20 +1,21 @@
-import { clear, el, toast, confirmDialog, slugify, fmtScore, openModal } from "../utils.js?v=13";
-import { getAuthSnapshot, signInWithPassword, signOut } from "../auth.js?v=13";
-import { getCurrentEdition, setCurrentEdition } from "../state.js?v=13";
+import { clear, el, toast, confirmDialog, slugify, fmtScore, openModal } from "../utils.js?v=14";
+import { getAuthSnapshot, signInWithPassword, signOut } from "../auth.js?v=14";
+import { getCurrentEdition, setCurrentEdition } from "../state.js?v=14";
 import {
   listEditionsAccessible, createEdition, updateEdition,
   listProjects, getProjectFull, createProject, updateProject, deleteProject,
   listTeamsByProject, getTeamFull, createTeam, updateTeam, deleteTeam,
   replaceTeamMembers, listTeamMembers,
   listEvaluators, setAssignment, listAssignmentsForEdition,
+  createEvaluatorAccount, updateEvaluatorProfile,
   listConfigs, upsertActiveConfig,
   uploadProjectDocument, addProjectLink, deleteProjectDocument, resolveDocUrl,
   uploadTeamPhoto, deleteTeamPhoto, signedPhotoUrl, listTeamPhotos,
   listRanking,
-} from "../data.js?v=13";
-import { supabase } from "../supabase.js?v=13";
-import { parseFile } from "../parsers.js?v=13";
-import { navigate } from "../router.js?v=13";
+} from "../data.js?v=14";
+import { supabase } from "../supabase.js?v=14";
+import { parseFile } from "../parsers.js?v=14";
+import { navigate } from "../router.js?v=14";
 
 export async function renderAdmin({ section = "dashboard", projectId = null, teamId = null } = {}) {
   console.log("[admin] renderAdmin start", { section, projectId, teamId });
@@ -115,20 +116,12 @@ function paintLogin(root) {
     finally { if (btn) btn.disabled = false; }
   }}, [
     el("h1", { text: "Acceso administrador" }),
-    el("p", { class: "text-muted mb-3", text: "Ingresa con tu cuenta de administrador. Si es la primera vez, regístrate aquí y luego un administrador existente debe actualizar tu rol en SQL." }),
+    el("p", { class: "text-muted mb-3", text: "Esta pantalla es solo para administradores." }),
     el("div", { class: "field" }, [el("label", { class: "field__label", text: "Correo" }), emailEl]),
     el("div", { class: "field" }, [el("label", { class: "field__label", text: "Contraseña" }), passEl]),
     errBox,
     el("button", { class: "btn btn--primary btn--lg btn--block", type: "submit", text: "Entrar" }),
-    el("div", { class: "divider" }),
-    el("button", { class: "btn btn--ghost btn--block", type: "button", text: "Crear cuenta nueva", onclick: async () => {
-      errBox.textContent = "";
-      try {
-        const { error } = await supabase.auth.signUp({ email: emailEl.value.trim(), password: passEl.value });
-        if (error) throw error;
-        toast("Cuenta creada. Si Supabase exige verificación, revisa tu correo.", "success");
-      } catch (err) { errBox.textContent = err.message; }
-    } }),
+    el("p", { class: "text-soft mt-3", style: { fontSize: "0.85rem", textAlign: "center" }, text: "¿Eres jurado? Entra por la sección Jurado con las credenciales que te enviaron." }),
   ]);
   root.append(form);
 }
@@ -878,28 +871,32 @@ async function renderEvaluatorsAdmin(body) {
   const ed = getCurrentEdition();
   if (!ed) { body.append(el("div", { class: "empty", text: "Selecciona una edición." })); return; }
   body.append(el("div", { class: "section-head" }, [
-    el("h2", { text: "Jurados" }),
-    el("button", { class: "btn btn--primary", text: "Agregar jurado", onclick: openAdd }),
+    el("div", {}, [
+      el("h2", { text: "Jurados" }),
+      el("p", { class: "text-muted", text: "Tú creas y gestionas las cuentas. El jurado solo recibe correo y contraseña." }),
+    ]),
+    el("button", { class: "btn btn--primary", text: "+ Crear jurado", onclick: openCreate }),
   ]));
   const list = el("div", { class: "flex-col gap-2" });
   body.append(list);
   let evs = [];
   try { evs = await listEvaluators(ed.id); }
   catch { list.append(el("div", { class: "error-banner", text: "Error cargando jurados" })); return; }
-  if (!evs.length) { list.append(el("div", { class: "empty", text: "Sin jurados registrados en esta edición." })); return; }
+  if (!evs.length) { list.append(el("div", { class: "empty", text: "Sin jurados registrados en esta edición. Crea el primero con el botón de arriba." })); return; }
   evs.forEach((ev) => list.append(el("div", { class: "card" }, [
-    el("div", { class: "flex items-center justify-between gap-3" }, [
+    el("div", { class: "flex items-center justify-between gap-3", style: { flexWrap: "wrap" } }, [
       el("div", {}, [
-        el("strong", { text: ev.profile?.display_name || "Jurado" }),
+        el("strong", { text: ev.profile?.display_name || "Jurado sin nombre" }),
         el("div", { class: "text-muted", style: { fontSize: "0.85rem" }, text: ev.active ? "Activo" : "Inactivo" }),
       ]),
-      el("div", { class: "btn-row" }, [
+      el("div", { class: "btn-row", style: { flexWrap: "wrap" } }, [
+        el("button", { class: "btn btn--ghost btn--sm", text: "Editar nombre", onclick: () => openEditName(ev) }),
         el("button", { class: "btn btn--ghost btn--sm", text: ev.active ? "Desactivar" : "Activar", onclick: async () => {
           const { error } = await supabase.from("evaluators").update({ active: !ev.active }).eq("id", ev.id);
           if (error) toast("Error: " + error.message, "error"); else { toast("Actualizado", "success"); renderAdmin({ section: "jurados" }); }
         } }),
-        el("button", { class: "btn btn--danger btn--sm", text: "Eliminar", onclick: async () => {
-          const ok = await confirmDialog("¿Eliminar este jurado de la edición? Sus evaluaciones se conservarán.", { okLabel: "Eliminar", danger: true });
+        el("button", { class: "btn btn--danger btn--sm", text: "Quitar de edición", onclick: async () => {
+          const ok = await confirmDialog("¿Quitar este jurado de la edición? Sus evaluaciones se conservarán y la cuenta seguirá existiendo.", { okLabel: "Quitar", danger: true });
           if (!ok) return;
           const { error } = await supabase.from("evaluators").delete().eq("id", ev.id);
           if (error) toast("Error: " + error.message, "error"); else { toast("Eliminado", "success"); renderAdmin({ section: "jurados" }); }
@@ -908,26 +905,111 @@ async function renderEvaluatorsAdmin(body) {
     ]),
   ])));
 
-  async function openAdd() {
-    const emailEl = el("input", { class: "input", type: "email", placeholder: "jurado@correo.com" });
-    const help = el("p", { class: "field__hint", text: "El usuario debe haberse registrado previamente en la app (puede crear su cuenta en la pantalla #/admin con 'Crear cuenta nueva')." });
+  async function openCreate() {
+    const nameEl = el("input", { class: "input", type: "text", placeholder: "Ej: Andrea Gómez" });
+    const emailEl = el("input", { class: "input", type: "email", placeholder: "jurado@correo.com", autocomplete: "off" });
+    const passEl = el("input", { class: "input", type: "text", value: generatePassword(), autocomplete: "off" });
+    const regenBtn = el("button", { class: "btn btn--ghost btn--sm", type: "button", text: "Generar otra", onclick: () => { passEl.value = generatePassword(); } });
+    const help = el("p", { class: "field__hint", text: "Al crear la cuenta, el jurado podrá entrar de inmediato en #/jurado con estas credenciales." });
+
     const r = await openModal({
-      title: "Agregar jurado por email",
-      body: el("div", {}, [el("div", { class: "field" }, [el("label", { class: "field__label", text: "Correo del jurado" }), emailEl, help])]),
+      title: "Crear cuenta de jurado",
+      body: el("div", {}, [
+        el("div", { class: "field" }, [el("label", { class: "field__label", text: "Nombre completo" }), nameEl]),
+        el("div", { class: "field" }, [el("label", { class: "field__label", text: "Correo" }), emailEl]),
+        el("div", { class: "field" }, [
+          el("label", { class: "field__label", text: "Contraseña inicial" }),
+          el("div", { class: "flex gap-2 items-center" }, [passEl, regenBtn]),
+          el("p", { class: "field__hint", text: "El jurado podrá cambiarla después si lo desea." }),
+        ]),
+        help,
+      ]),
       actions: [
         { label: "Cancelar", onClick: () => null },
-        { label: "Agregar", variant: "primary", onClick: async () => {
-          const email = emailEl.value.trim();
-          if (!email) throw new Error("Email requerido");
-          const { data, error } = await supabase.rpc("admin_add_evaluator_by_email", { p_edition_id: ed.id, p_email: email });
-          if (error) throw error;
-          if (!data?.ok) throw new Error(data?.error === "user_not_found" ? "No existe un usuario con ese email. Pídele que se registre primero." : `Error: ${data?.error || ""}`);
+        { label: "Crear jurado", variant: "primary", onClick: async () => {
+          const result = await createEvaluatorAccount({
+            editionId: ed.id,
+            email: emailEl.value,
+            password: passEl.value,
+            displayName: nameEl.value,
+          });
+          return { ...result, email: emailEl.value.trim().toLowerCase(), password: passEl.value, displayName: nameEl.value.trim() };
+        } },
+      ],
+    });
+    if (r?.ok) {
+      await showCredentialsModal(r);
+      renderAdmin({ section: "jurados" });
+    }
+  }
+
+  async function openEditName(ev) {
+    const nameEl = el("input", { class: "input", type: "text", value: ev.profile?.display_name || "" });
+    const r = await openModal({
+      title: "Editar nombre del jurado",
+      body: el("div", { class: "field" }, [el("label", { class: "field__label", text: "Nombre completo" }), nameEl]),
+      actions: [
+        { label: "Cancelar", onClick: () => null },
+        { label: "Guardar", variant: "primary", onClick: async () => {
+          await updateEvaluatorProfile({ userId: ev.user_id, displayName: nameEl.value });
           return true;
         } },
       ],
     });
-    if (r) renderAdmin({ section: "jurados" });
+    if (r) { toast("Nombre actualizado", "success"); renderAdmin({ section: "jurados" }); }
   }
+}
+
+function generatePassword(len = 12) {
+  const chars = "abcdefghjkmnpqrstuvwxyzABCDEFGHJKMNPQRSTUVWXYZ23456789";
+  let out = "";
+  const arr = new Uint32Array(len);
+  (window.crypto || window.msCrypto).getRandomValues(arr);
+  for (let i = 0; i < len; i++) out += chars[arr[i] % chars.length];
+  return out;
+}
+
+async function showCredentialsModal({ email, password, displayName, requiresEmailConfirm }) {
+  const credsBox = el("div", {
+    class: "card",
+    style: { background: "var(--surface-2, #f8fafc)", padding: "var(--space-3)", fontFamily: "ui-monospace, monospace", fontSize: "0.95rem", lineHeight: "1.6" },
+  }, [
+    el("div", {}, [el("strong", { text: "Nombre: " }), document.createTextNode(displayName)]),
+    el("div", {}, [el("strong", { text: "Correo: " }), document.createTextNode(email)]),
+    el("div", {}, [el("strong", { text: "Contraseña: " }), document.createTextNode(password)]),
+    el("div", {}, [el("strong", { text: "Acceso: " }), document.createTextNode(window.location.origin + window.location.pathname + "#/jurado")]),
+  ]);
+
+  const fullText = `Hola ${displayName}, te invito a evaluar la Feria STEAM.\n\n` +
+    `Acceso: ${window.location.origin + window.location.pathname}#/jurado\n` +
+    `Correo: ${email}\n` +
+    `Contraseña: ${password}\n\n` +
+    `Si tienes dudas avísame. ¡Gracias!`;
+
+  const warnBox = requiresEmailConfirm
+    ? el("div", { class: "error-banner", style: { marginTop: "var(--space-3)" } }, [
+        document.createTextNode("Tu proyecto Supabase tiene activo \"Confirm email\". El jurado debe revisar su correo y confirmar antes de entrar. "),
+        el("br"),
+        document.createTextNode("Para evitarlo: Supabase → Authentication → Providers → Email → desactiva \"Confirm email\"."),
+      ])
+    : null;
+
+  await openModal({
+    title: "Cuenta creada — comparte estas credenciales",
+    body: el("div", {}, [
+      el("p", { class: "text-muted", text: "Copia el mensaje y envíaselo al jurado por WhatsApp o correo. Esta es la única vez que verás la contraseña." }),
+      credsBox,
+      warnBox,
+    ]),
+    actions: [
+      { label: "Copiar mensaje", variant: "primary", onClick: async () => {
+        try { await navigator.clipboard.writeText(fullText); toast("Mensaje copiado", "success"); }
+        catch { toast("No se pudo copiar; selecciona y copia manualmente.", "error"); }
+        return false;
+      } },
+      { label: "Listo", onClick: () => true },
+    ],
+  });
 }
 
 /* ---------------- Ranking admin ---------------- */
