@@ -1,4 +1,4 @@
-import { supabase, getCurrentProfile, getSession } from "./supabase.js";
+import { supabase, getProfileFor, getSession } from "./supabase.js";
 
 const listeners = new Set();
 let cache = { session: null, profile: null, ready: false };
@@ -17,7 +17,7 @@ function emit() {
 
 export async function refreshAuth() {
   const session = await getSession();
-  const profile = session ? await getCurrentProfile() : null;
+  const profile = session ? await getProfileFor(session.user.id) : null;
   cache = { session, profile, ready: true };
   emit();
   return cache;

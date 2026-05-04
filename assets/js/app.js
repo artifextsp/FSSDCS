@@ -5,8 +5,8 @@ import { $, $$, el, clear } from "./utils.js";
 
 console.log("[boot] app.js evaluado");
 
-// Fallback: si en 12s no se montó nada, mostrar mensaje de diagnóstico
-setTimeout(() => {
+// Fallback de diagnóstico (se cancela al iniciar el router)
+let bootDiagnosticTimer = setTimeout(() => {
   const main = document.querySelector("[data-app-main]");
   const stillLoading = main?.querySelector("[data-initial-loading]");
   if (stillLoading) {
@@ -21,7 +21,7 @@ setTimeout(() => {
         <a class="btn btn--primary mt-3" href="#/">Ir al inicio</a>
       </section>`;
   }
-}, 12000);
+}, 15000);
 
 import { renderLanding } from "./views/landing.js";
 import { renderProjects } from "./views/public_projects.js";
@@ -99,12 +99,17 @@ window.addEventListener("error", (e) => console.error("[global error]", e?.error
 window.addEventListener("unhandledrejection", (e) => console.error("[unhandled rejection]", e?.reason));
 
 (async function boot() {
-  try { await withTimeout(refreshAuth(), 8000, "refreshAuth"); }
-  catch (e) { console.error("[boot] refreshAuth failed", e); }
-  try { await withTimeout(loadInitialEdition(), 8000, "loadInitialEdition"); }
-  catch (e) { console.error("[boot] loadInitialEdition failed", e); }
-  try { startRouter(); }
-  catch (e) {
+  const t0 = performance.now();
+  // En paralelo: auth y edición. Cada uno con su propio timeout corto.
+  await Promise.all([
+    withTimeout(refreshAuth().catch((e) => { console.error("[boot] refreshAuth failed", e); }), 6000, "refreshAuth"),
+    withTimeout(loadInitialEdition().catch((e) => { console.error("[boot] loadInitialEdition failed", e); }), 6000, "loadInitialEdition"),
+  ]);
+  console.log(`[boot] auth+edition listos en ${Math.round(performance.now() - t0)}ms`);
+  try {
+    clearTimeout(bootDiagnosticTimer);
+    startRouter();
+  } catch (e) {
     console.error("[boot] startRouter failed", e);
     const main = document.querySelector("[data-app-main]");
     if (main) {

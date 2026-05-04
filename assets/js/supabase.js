@@ -16,14 +16,19 @@ export async function getSession() {
   return data.session ?? null;
 }
 
-export async function getCurrentProfile() {
-  const session = await getSession();
-  if (!session) return null;
+export async function getProfileFor(userId) {
+  if (!userId) return null;
   const { data, error } = await supabase
     .from("profiles")
     .select("user_id, display_name, role")
-    .eq("user_id", session.user.id)
+    .eq("user_id", userId)
     .maybeSingle();
   if (error) return null;
   return data ?? null;
+}
+
+export async function getCurrentProfile() {
+  const session = await getSession();
+  if (!session) return null;
+  return getProfileFor(session.user.id);
 }
