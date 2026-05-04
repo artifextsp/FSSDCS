@@ -18,6 +18,13 @@ export async function renderJury() {
     return;
   }
   if (!auth.session) return paintLogin(wrap);
+  if (!auth.profile) {
+    wrap.append(el("div", { class: "loading-screen" }, [
+      el("div", { class: "spinner", "aria-hidden": "true" }),
+      el("p", { text: "Cargando perfil…" }),
+    ]));
+    return;
+  }
 
   if (auth.profile?.role && !["admin", "evaluator"].includes(auth.profile.role)) {
     wrap.append(el("div", { class: "error-banner", text: "Tu cuenta no tiene rol de jurado. Pide al administrador que te asigne." }));

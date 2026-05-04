@@ -31,7 +31,16 @@ export async function renderAdmin({ section = "dashboard", projectId = null, tea
     return;
   }
   if (!auth.session) return paintLogin(wrap);
-  if (auth.profile?.role !== "admin") {
+  // Sesión cacheada pero perfil aún cargando: esperamos un instante a que
+  // llegue para no mostrar el banner de "no eres admin" injustamente.
+  if (!auth.profile) {
+    wrap.append(el("div", { class: "loading-screen" }, [
+      el("div", { class: "spinner", "aria-hidden": "true" }),
+      el("p", { text: "Cargando perfil…" }),
+    ]));
+    return;
+  }
+  if (auth.profile.role !== "admin") {
     wrap.append(el("div", { class: "error-banner" }, [
       "Tu cuenta no tiene rol de administrador. ",
       el("br"),
