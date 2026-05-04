@@ -1,6 +1,6 @@
-import { clear, el, fmtScore } from "../utils.js";
-import { getTeamFull, signedPhotoUrl } from "../data.js";
-import { subscribeTable } from "../realtime.js";
+import { clear, el, fmtScore } from "../utils.js?v=12";
+import { getTeamFull, signedPhotoUrl } from "../data.js?v=12";
+import { subscribeTable } from "../realtime.js?v=12";
 
 export async function renderPublicTeam(teamId) {
   const main = document.querySelector("[data-app-main]");

@@ -1,4 +1,4 @@
-import { supabase } from "./supabase.js";
+import { supabase } from "./supabase.js?v=12";
 
 export function subscribeTable({ schema = "public", table, filter, onChange }) {
   const channelName = `rt-${table}-${filter ?? "all"}-${Math.random().toString(36).slice(2, 7)}`;

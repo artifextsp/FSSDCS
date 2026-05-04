@@ -1,20 +1,20 @@
-import { defineRoute, startRouter, navigate, refreshCurrent } from "./router.js";
-import { onAuthChange, refreshAuth, signOut } from "./auth.js";
-import { loadInitialEdition, onEditionChange } from "./state.js";
-import { $, $$, el, clear } from "./utils.js";
+import { defineRoute, startRouter, navigate, refreshCurrent } from "./router.js?v=12";
+import { onAuthChange, refreshAuth, signOut } from "./auth.js?v=12";
+import { loadInitialEdition, onEditionChange } from "./state.js?v=12";
+import { $, $$, el, clear } from "./utils.js?v=12";
 
 console.log("[boot] app.js evaluado");
 
-import { renderLanding } from "./views/landing.js";
-import { renderProjects } from "./views/public_projects.js";
-import { renderProject } from "./views/public_project.js";
-import { renderRanking } from "./views/public_ranking.js";
-import { renderTeam } from "./views/team.js";
-import { renderJury } from "./views/jury.js";
-import { renderJuryEvaluate } from "./views/jury_evaluate.js";
-import { renderJuryTeamEvaluate } from "./views/jury_evaluate.js";
-import { renderPublicTeam } from "./views/public_team.js";
-import { renderAdmin } from "./views/admin.js";
+import { renderLanding } from "./views/landing.js?v=12";
+import { renderProjects } from "./views/public_projects.js?v=12";
+import { renderProject } from "./views/public_project.js?v=12";
+import { renderRanking } from "./views/public_ranking.js?v=12";
+import { renderTeam } from "./views/team.js?v=12";
+import { renderJury } from "./views/jury.js?v=12";
+import { renderJuryEvaluate } from "./views/jury_evaluate.js?v=12";
+import { renderJuryTeamEvaluate } from "./views/jury_evaluate.js?v=12";
+import { renderPublicTeam } from "./views/public_team.js?v=12";
+import { renderAdmin } from "./views/admin.js?v=12";
 
 /* ---- Header interactions ---- */
 const navToggle = $("[data-nav-toggle]");

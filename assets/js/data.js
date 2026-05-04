@@ -1,4 +1,4 @@
-import { supabase } from "./supabase.js";
+import { supabase } from "./supabase.js?v=12";
 
 /* ---------------- Editions ---------------- */
 export async function listEditionsAccessible() {
