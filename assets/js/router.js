@@ -71,3 +71,7 @@ export function startRouter() {
   window.addEventListener("DOMContentLoaded", resolveCurrent);
   if (document.readyState !== "loading") resolveCurrent();
 }
+
+export function refreshCurrent() {
+  return resolveCurrent();
+}

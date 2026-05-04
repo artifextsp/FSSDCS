@@ -11,9 +11,23 @@ export const supabase = createClient(SUPABASE_URL, SUPABASE_KEY, {
   realtime: { params: { eventsPerSecond: 5 } },
 });
 
+function withTimeoutMs(promise, ms, fallback = null) {
+  return Promise.race([
+    promise,
+    new Promise((resolve) => setTimeout(() => resolve(fallback), ms)),
+  ]);
+}
+
 export async function getSession() {
-  const { data } = await supabase.auth.getSession();
-  return data.session ?? null;
+  // Si Supabase tarda en responder (token expirado, refresh lento, red bloqueada),
+  // devolvemos null y dejamos que la app siga; el listener onAuthStateChange
+  // actualizará el estado cuando finalmente complete.
+  const result = await withTimeoutMs(
+    supabase.auth.getSession().then((r) => r?.data?.session ?? null).catch(() => null),
+    2500,
+    null
+  );
+  return result;
 }
 
 export async function getProfileFor(userId) {

@@ -10,6 +10,13 @@ export async function renderJury() {
   main.append(wrap);
 
   const auth = getAuthSnapshot();
+  if (!auth.ready) {
+    wrap.append(el("div", { class: "loading-screen" }, [
+      el("div", { class: "spinner", attrs: { "aria-hidden": "true" } }),
+      el("p", { text: "Verificando sesión…" }),
+    ]));
+    return;
+  }
   if (!auth.session) return paintLogin(wrap);
 
   if (auth.profile?.role && !["admin", "evaluator"].includes(auth.profile.role)) {

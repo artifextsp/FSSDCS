@@ -27,6 +27,13 @@ export async function renderJuryEvaluate(projectId) {
   main.append(wrap);
 
   const auth = getAuthSnapshot();
+  if (!auth.ready) {
+    wrap.append(el("div", { class: "loading-screen" }, [
+      el("div", { class: "spinner", attrs: { "aria-hidden": "true" } }),
+      el("p", { text: "Verificando sesión…" }),
+    ]));
+    return;
+  }
   if (!auth.session) { navigate("/jurado"); return; }
 
   wrap.append(el("a", { class: "btn btn--ghost btn--sm", href: "#/jurado", text: "← Volver a mis proyectos" }));
@@ -82,6 +89,13 @@ export async function renderJuryTeamEvaluate(teamId) {
   main.append(wrap);
 
   const auth = getAuthSnapshot();
+  if (!auth.ready) {
+    wrap.append(el("div", { class: "loading-screen" }, [
+      el("div", { class: "spinner", attrs: { "aria-hidden": "true" } }),
+      el("p", { text: "Verificando sesión…" }),
+    ]));
+    return;
+  }
   if (!auth.session) { navigate("/jurado"); return; }
 
   let bundle;

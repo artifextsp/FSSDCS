@@ -1,27 +1,9 @@
-import { defineRoute, startRouter, navigate } from "./router.js";
+import { defineRoute, startRouter, navigate, refreshCurrent } from "./router.js";
 import { onAuthChange, refreshAuth, signOut } from "./auth.js";
-import { loadInitialEdition } from "./state.js";
+import { loadInitialEdition, onEditionChange } from "./state.js";
 import { $, $$, el, clear } from "./utils.js";
 
 console.log("[boot] app.js evaluado");
-
-// Fallback de diagnóstico (se cancela al iniciar el router)
-let bootDiagnosticTimer = setTimeout(() => {
-  const main = document.querySelector("[data-app-main]");
-  const stillLoading = main?.querySelector("[data-initial-loading]");
-  if (stillLoading) {
-    console.error("[boot] timeout — la app no terminó de iniciar");
-    main.innerHTML = `
-      <section class="container">
-        <div class="error-banner">
-          <strong>La aplicación no terminó de iniciar.</strong><br>
-          Abre la consola (Cmd+Opt+J) y revisa si hay errores en rojo. Luego haz Cmd+Shift+R para recargar sin caché.
-        </div>
-        <p class="text-muted mt-3">Si el problema persiste, revisa que las migraciones de Supabase se hayan aplicado correctamente.</p>
-        <a class="btn btn--primary mt-3" href="#/">Ir al inicio</a>
-      </section>`;
-  }
-}, 15000);
 
 import { renderLanding } from "./views/landing.js";
 import { renderProjects } from "./views/public_projects.js";
@@ -85,35 +67,41 @@ defineRoute("/admin/equipos/:id", ({ params }) => renderAdmin({ section: "team",
 defineRoute("/admin/:section", ({ params }) => renderAdmin({ section: params.section }));
 
 /* ---- Boot ---- */
-function withTimeout(promise, ms, label) {
-  return Promise.race([
-    promise,
-    new Promise((resolve) => setTimeout(() => {
-      console.warn(`[boot] timeout: ${label} (${ms}ms)`);
-      resolve(null);
-    }, ms)),
-  ]);
-}
-
 window.addEventListener("error", (e) => console.error("[global error]", e?.error || e?.message));
 window.addEventListener("unhandledrejection", (e) => console.error("[unhandled rejection]", e?.reason));
 
-(async function boot() {
-  const t0 = performance.now();
-  // En paralelo: auth y edición. Cada uno con su propio timeout corto.
-  await Promise.all([
-    withTimeout(refreshAuth().catch((e) => { console.error("[boot] refreshAuth failed", e); }), 6000, "refreshAuth"),
-    withTimeout(loadInitialEdition().catch((e) => { console.error("[boot] loadInitialEdition failed", e); }), 6000, "loadInitialEdition"),
-  ]);
-  console.log(`[boot] auth+edition listos en ${Math.round(performance.now() - t0)}ms`);
-  try {
-    clearTimeout(bootDiagnosticTimer);
-    startRouter();
-  } catch (e) {
-    console.error("[boot] startRouter failed", e);
-    const main = document.querySelector("[data-app-main]");
-    if (main) {
-      main.innerHTML = `<section class="container"><div class="error-banner">No se pudo iniciar la aplicación. Recarga la página.</div></section>`;
-    }
+// Arranca el router YA. La auth y la edición se resuelven en background
+// y disparan un re-render de la vista actual cuando llegan.
+try {
+  startRouter();
+  console.log("[boot] router iniciado");
+} catch (e) {
+  console.error("[boot] startRouter failed", e);
+  const main = document.querySelector("[data-app-main]");
+  if (main) {
+    main.innerHTML = `<section class="container"><div class="error-banner">No se pudo iniciar la aplicación. Recarga la página.</div></section>`;
   }
-})();
+}
+
+const t0 = performance.now();
+let lastAuthKey = null;
+let lastEditionId = null;
+
+onAuthChange((s) => {
+  const key = `${s?.session?.user?.id || ""}:${s?.profile?.role || ""}`;
+  if (key === lastAuthKey) return;
+  lastAuthKey = key;
+  console.log(`[boot] auth update (+${Math.round(performance.now() - t0)}ms)`);
+  refreshCurrent().catch((e) => console.error("[boot] refresh failed", e));
+});
+onEditionChange((ed) => {
+  if (ed?.id === lastEditionId) return;
+  lastEditionId = ed?.id || null;
+  console.log(`[boot] edición update (+${Math.round(performance.now() - t0)}ms)`);
+  refreshCurrent().catch((e) => console.error("[boot] refresh failed", e));
+});
+
+// Disparamos refreshAuth a mano por si onAuthStateChange (INITIAL_SESSION)
+// tarda en activarse. getSession() tiene timeout interno de 2.5s.
+refreshAuth().catch((e) => console.error("[boot] refreshAuth failed", e));
+loadInitialEdition().catch((e) => console.error("[boot] loadInitialEdition failed", e));
