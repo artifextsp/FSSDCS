@@ -1,5 +1,4 @@
 import { supabase } from "./supabase.js?v=14";
-import { createClient } from "https://esm.sh/@supabase/supabase-js@2.45.4?bundle";
 import { SUPABASE_URL, SUPABASE_KEY } from "./config.js?v=14";
 
 /* ---------------- Editions ---------------- */
@@ -404,13 +403,14 @@ export async function listEvaluators(editionId) {
 }
 
 /**
- * Crea una cuenta de jurado completa: registra el usuario en auth.users
- * (con su display_name), lo deja con rol evaluator (vía trigger
- * handle_new_user) y lo agrega como evaluador activo de la edición.
+ * Crea una cuenta de jurado completa llamando a la Edge Function
+ * `create-evaluator`, que usa la Admin API de Supabase. Esto:
+ *   - NO envía correo de confirmación (sin rate limit de email).
+ *   - Crea la cuenta ya confirmada → el jurado entra de inmediato.
+ *   - Asegura role='evaluator' en profiles y lo activa en la edición.
  *
- * Usa un cliente Supabase efímero con storageKey aislado para que el
- * signUp no contamine ni desplace la sesión del admin que está logueado
- * en el cliente principal.
+ * No tocamos la sesión del admin: la function corre server-side con
+ * service_role y solo lee el JWT del admin para validar permisos.
  */
 export async function createEvaluatorAccount({ editionId, email, password, displayName }) {
   if (!editionId) throw new Error("Falta la edición.");
@@ -418,76 +418,58 @@ export async function createEvaluatorAccount({ editionId, email, password, displ
   if (!password || password.length < 6) throw new Error("La contraseña debe tener al menos 6 caracteres.");
   if (!displayName || !displayName.trim()) throw new Error("Falta el nombre del jurado.");
 
-  const tmpKey = `feria-tmp-${Math.random().toString(36).slice(2)}`;
-  const tmp = createClient(SUPABASE_URL, SUPABASE_KEY, {
-    auth: {
-      persistSession: false,
-      autoRefreshToken: false,
-      detectSessionInUrl: false,
-      storageKey: tmpKey,
-    },
-  });
+  const session = (await supabase.auth.getSession())?.data?.session;
+  const accessToken = session?.access_token;
+  if (!accessToken) {
+    throw new Error("Tu sesión expiró. Vuelve a iniciar sesión como admin.");
+  }
 
-  let signUpResult;
+  const url = `${SUPABASE_URL}/functions/v1/create-evaluator`;
+  let res;
   try {
-    signUpResult = await tmp.auth.signUp({
-      email: email.trim().toLowerCase(),
-      password,
-      options: { data: { display_name: displayName.trim() } },
+    res = await fetch(url, {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        apikey: SUPABASE_KEY,
+        Authorization: `Bearer ${accessToken}`,
+      },
+      body: JSON.stringify({
+        editionId,
+        email: email.trim().toLowerCase(),
+        password,
+        displayName: displayName.trim(),
+      }),
     });
   } catch (e) {
-    throw new Error(e?.message || "No se pudo crear la cuenta.");
+    throw new Error(e?.message || "No se pudo contactar al servidor.");
   }
 
-  if (signUpResult.error) {
-    const msg = signUpResult.error.message || "";
-    if (/already registered|already exists/i.test(msg)) {
-      throw new Error("Ese correo ya está registrado. Usa otro o avísame para vincular la cuenta existente.");
+  let body = null;
+  try { body = await res.json(); } catch {}
+
+  if (!res.ok || !body?.ok) {
+    const code = body?.error || `http_${res.status}`;
+    if (code === "email_in_use") {
+      throw new Error("Ese correo ya está registrado. Usa otro o pídeme que vincule la cuenta existente.");
     }
-    throw new Error(msg || "No se pudo crear la cuenta.");
-  }
-
-  const user = signUpResult.data?.user;
-  const session = signUpResult.data?.session;
-  // Truco de Supabase: si el correo ya existía pero "Confirm email" está activo,
-  // no devuelve error pero `identities` viene vacío.
-  if (user && Array.isArray(user.identities) && user.identities.length === 0) {
-    try { await tmp.auth.signOut(); } catch {}
-    throw new Error("Ese correo ya está registrado. Usa otro o pídeme que vincule la cuenta.");
-  }
-
-  const requiresEmailConfirm = !!user && !session;
-
-  try { await tmp.auth.signOut(); } catch {}
-
-  // Forzamos el display_name por si el trigger ya había ejecutado
-  // anteriormente para este user (en caso de re-uso) y aseguramos role='evaluator'.
-  try {
-    await supabase
-      .from("profiles")
-      .update({ display_name: displayName.trim(), role: "evaluator" })
-      .eq("user_id", user.id);
-  } catch (e) {
-    console.warn("[createEvaluatorAccount] no pude actualizar perfil", e);
-  }
-
-  const { data: rpc, error } = await supabase.rpc("admin_add_evaluator_by_email", {
-    p_edition_id: editionId,
-    p_email: email.trim(),
-  });
-  if (error) throw error;
-  if (!rpc?.ok) {
-    if (rpc?.error === "user_not_found") {
-      throw new Error("La cuenta se creó pero todavía no aparece en el sistema. Refresca y agrégalo manualmente.");
+    if (code === "forbidden") {
+      throw new Error("Tu cuenta no tiene permisos de admin para crear jurados.");
     }
-    throw new Error("No se pudo registrar al jurado: " + (rpc?.error || ""));
+    if (code === "weak_password") {
+      throw new Error("La contraseña debe tener al menos 6 caracteres.");
+    }
+    if (code === "invalid_email") {
+      throw new Error("Correo inválido.");
+    }
+    throw new Error("No se pudo crear la cuenta: " + code);
   }
 
   return {
     ok: true,
-    requiresEmailConfirm,
-    userId: user.id,
-    evaluatorId: rpc.evaluator_id,
+    requiresEmailConfirm: false,
+    userId: body.userId,
+    evaluatorId: body.evaluatorId,
   };
 }
 
