@@ -1,7 +1,7 @@
 /**
  * Estado ligero de aplicación (edición seleccionada).
  */
-import { listEditionsAccessible } from "./data.js?v=14";
+import { listEditionsAccessible } from "./data.js?v=15";
 
 const KEY = "feria-steam-edition-id";
 

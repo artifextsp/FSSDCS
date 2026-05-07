@@ -1,5 +1,5 @@
-import { clear, el, fmtScore, toast, confirmDialog } from "../utils.js?v=14";
-import { getAuthSnapshot } from "../auth.js?v=14";
+import { clear, el, fmtScore, toast, confirmDialog } from "../utils.js?v=15";
+import { getAuthSnapshot } from "../auth.js?v=15";
 import {
   getProject,
   listTeamsByProject,
@@ -14,10 +14,10 @@ import {
   deleteTeamPhoto,
   signedPhotoUrl,
   listConfigs,
-} from "../data.js?v=14";
+} from "../data.js?v=15";
 
-import { navigate } from "../router.js?v=14";
-import { subscribeTable } from "../realtime.js?v=14";
+import { navigate } from "../router.js?v=15";
+import { subscribeTable } from "../realtime.js?v=15";
 
 /* ============ Pantalla 1: Lista de equipos del proyecto a evaluar ============ */
 export async function renderJuryEvaluate(projectId) {

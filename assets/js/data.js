@@ -1,5 +1,5 @@
-import { supabase } from "./supabase.js?v=14";
-import { SUPABASE_URL, SUPABASE_KEY } from "./config.js?v=14";
+import { supabase } from "./supabase.js?v=15";
+import { SUPABASE_URL, SUPABASE_KEY } from "./config.js?v=15";
 
 /* ---------------- Editions ---------------- */
 export async function listEditionsAccessible() {

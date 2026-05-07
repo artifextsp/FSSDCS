@@ -1,6 +1,6 @@
-import { clear, el, toast, confirmDialog, slugify, fmtScore, openModal } from "../utils.js?v=14";
-import { getAuthSnapshot, signInWithPassword, signOut } from "../auth.js?v=14";
-import { getCurrentEdition, setCurrentEdition } from "../state.js?v=14";
+import { clear, el, toast, confirmDialog, slugify, fmtScore, openModal } from "../utils.js?v=15";
+import { getAuthSnapshot, signInWithPassword, signOut } from "../auth.js?v=15";
+import { getCurrentEdition, setCurrentEdition } from "../state.js?v=15";
 import {
   listEditionsAccessible, createEdition, updateEdition,
   listProjects, getProjectFull, createProject, updateProject, deleteProject,
@@ -12,10 +12,10 @@ import {
   uploadProjectDocument, addProjectLink, deleteProjectDocument, resolveDocUrl,
   uploadTeamPhoto, deleteTeamPhoto, signedPhotoUrl, listTeamPhotos,
   listRanking,
-} from "../data.js?v=14";
-import { supabase } from "../supabase.js?v=14";
-import { parseFile } from "../parsers.js?v=14";
-import { navigate } from "../router.js?v=14";
+} from "../data.js?v=15";
+import { supabase } from "../supabase.js?v=15";
+import { parseFile } from "../parsers.js?v=15";
+import { navigate } from "../router.js?v=15";
 
 export async function renderAdmin({ section = "dashboard", projectId = null, teamId = null } = {}) {
   console.log("[admin] renderAdmin start", { section, projectId, teamId });
