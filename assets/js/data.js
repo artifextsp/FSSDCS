@@ -216,9 +216,17 @@ export async function teamPortalLookup(slug, name) {
 
 /* ---------------- Evaluator (jury) ---------------- */
 export async function listMyAssignedProjects() {
+  // Filtramos explícitamente por el user_id del jurado actual. Para un
+  // admin, la RLS pea_select_admin permite ver TODAS las asignaciones, por
+  // lo que sin este filtro veríamos todos los proyectos como "asignados a
+  // mí" en #/jurado, no solo los que el admin se auto-asignó.
+  const session = (await supabase.auth.getSession())?.data?.session;
+  const userId = session?.user?.id;
+  if (!userId) return [];
   const { data, error } = await supabase
     .from("project_evaluator_assignments")
-    .select("project_id, evaluator:evaluators!inner(id, edition_id)");
+    .select("project_id, evaluator:evaluators!inner(id, edition_id, user_id)")
+    .eq("evaluator.user_id", userId);
   if (error) throw error;
   if (!data?.length) return [];
   const ids = [...new Set(data.map((r) => r.project_id))];
@@ -228,10 +236,19 @@ export async function listMyAssignedProjects() {
 }
 
 export async function getMyEvaluatorIdForEdition(editionId) {
+  // Necesitamos filtrar por user_id ADEMÁS de edition_id: si el usuario es
+  // admin, la RLS evaluators_select_admin le deja ver TODAS las filas, y
+  // .maybeSingle() reventaría devolviendo más de un resultado. Para un
+  // evaluator normal el filtro por user_id es redundante (la RLS ya lo
+  // restringe a su fila), pero no estorba.
+  const session = (await supabase.auth.getSession())?.data?.session;
+  const userId = session?.user?.id;
+  if (!userId) return null;
   const { data, error } = await supabase
     .from("evaluators")
     .select("id, user_id")
     .eq("edition_id", editionId)
+    .eq("user_id", userId)
     .maybeSingle();
   if (error) throw error;
   return data?.id ?? null;
