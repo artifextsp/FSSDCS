@@ -107,9 +107,18 @@ function paintAuth({ session, profile }) {
     );
     return;
   }
-  // Estado logueado: solo el botón Salir. El admin/jurado entra a su panel
-  // por el redirect del login; si necesita volver, usa marcadores o
-  // re-loguea (la sesión persiste, así que el redirect es instantáneo).
+  // Estado logueado: si el rol tiene panel propio, mostramos un acceso
+  // directo al dashboard + botón de salir.
+  const role = profile?.role;
+  if (role === "admin") {
+    authSlot.append(
+      el("a", { class: "btn btn--accent btn--sm", href: "#/admin", text: "Mi panel · Admin" }),
+    );
+  } else if (role === "evaluator") {
+    authSlot.append(
+      el("a", { class: "btn btn--accent btn--sm", href: "#/jurado", text: "Mi panel · Jurado" }),
+    );
+  }
   authSlot.append(
     el("button", {
       class: "btn btn--ghost btn--sm",
