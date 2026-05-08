@@ -2,6 +2,7 @@ import { defineRoute, startRouter, navigate, refreshCurrent } from "./router.js?
 import { onAuthChange, refreshAuth, signOut } from "./auth.js?v=15";
 import { loadInitialEdition, onEditionChange } from "./state.js?v=15";
 import { $, $$, el, clear } from "./utils.js?v=15";
+import { supabase } from "./supabase.js?v=15";
 
 console.log("[boot] app.js evaluado");
 
@@ -92,6 +93,39 @@ function openLoginModal() {
   setTimeout(() => emailEl.focus(), 50);
 }
 
+// Cache de roles efectivos del usuario actual: además del role en profiles,
+// chequeamos si tiene filas en evaluators (un admin puede ser ALSO jurado).
+const effectiveRoles = { userId: null, isAdmin: false, isEvaluator: false };
+
+async function refreshEffectiveRoles({ session, profile }) {
+  const userId = session?.user?.id || null;
+  if (!userId) {
+    effectiveRoles.userId = null;
+    effectiveRoles.isAdmin = false;
+    effectiveRoles.isEvaluator = false;
+    return;
+  }
+  effectiveRoles.userId = userId;
+  effectiveRoles.isAdmin = profile?.role === "admin";
+  // Aunque el role principal sea admin, el usuario puede ser jurado si tiene
+  // filas en evaluators. Si su role es "evaluator" damos isEvaluator=true
+  // sin consultar; si es admin, consultamos para saber si además es jurado.
+  if (profile?.role === "evaluator") {
+    effectiveRoles.isEvaluator = true;
+    return;
+  }
+  try {
+    const { data, error } = await supabase
+      .from("evaluators")
+      .select("id")
+      .eq("user_id", userId)
+      .limit(1);
+    effectiveRoles.isEvaluator = !error && !!data?.length;
+  } catch {
+    effectiveRoles.isEvaluator = false;
+  }
+}
+
 function paintAuth({ session, profile }) {
   if (!authSlot) return;
   clear(authSlot);
@@ -107,16 +141,16 @@ function paintAuth({ session, profile }) {
     );
     return;
   }
-  // Estado logueado: si el rol tiene panel propio, mostramos un acceso
-  // directo al dashboard + botón de salir.
-  const role = profile?.role;
-  if (role === "admin") {
+  // Botones de panel: pueden aparecer ambos si el usuario tiene los dos
+  // roles efectivos (admin con asignaciones de jurado, por ejemplo).
+  if (effectiveRoles.isAdmin) {
     authSlot.append(
-      el("a", { class: "btn btn--accent btn--sm", href: "#/admin", text: "Mi panel · Admin" }),
+      el("a", { class: "btn btn--accent btn--sm", href: "#/admin", text: "Panel admin" }),
     );
-  } else if (role === "evaluator") {
+  }
+  if (effectiveRoles.isEvaluator) {
     authSlot.append(
-      el("a", { class: "btn btn--accent btn--sm", href: "#/jurado", text: "Mi panel · Jurado" }),
+      el("a", { class: "btn btn--accent btn--sm", href: "#/jurado", text: "Panel jurado" }),
     );
   }
   authSlot.append(
@@ -128,7 +162,17 @@ function paintAuth({ session, profile }) {
     }),
   );
 }
-onAuthChange(paintAuth);
+
+// Pintamos primero con lo que tengamos en cache; luego, si la sesión
+// cambió, consultamos los roles efectivos y volvemos a pintar.
+onAuthChange(async (state) => {
+  paintAuth(state);
+  const userId = state.session?.user?.id || null;
+  if (userId !== effectiveRoles.userId || (userId && state.profile)) {
+    await refreshEffectiveRoles(state);
+    paintAuth(state);
+  }
+});
 
 /* ---- Routes ---- */
 defineRoute("/", () => renderLanding());
