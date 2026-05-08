@@ -364,6 +364,13 @@ export async function adminReopenEvaluation(evaluationId) {
   return data;
 }
 
+// Borra completamente una evaluación (cabecera + respuestas via cascade).
+// Solo admin. Útil para limpiar pruebas.
+export async function adminDeleteEvaluation(evaluationId) {
+  const { error } = await supabase.rpc("admin_delete_evaluation", { p_evaluation_id: evaluationId });
+  if (error) throw error;
+}
+
 // Lista todas las evaluaciones (cualquier jurado) de un equipo, para que el
 // admin vea quiénes calificaron y pueda reabrir.
 export async function adminListTeamEvaluations(teamId) {

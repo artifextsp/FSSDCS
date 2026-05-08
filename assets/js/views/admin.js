@@ -12,7 +12,7 @@ import {
   uploadProjectDocument, addProjectLink, deleteProjectDocument, resolveDocUrl,
   uploadTeamPhoto, deleteTeamPhoto, signedPhotoUrl, listTeamPhotos,
   listRanking,
-  adminListTeamEvaluations, adminReopenEvaluation,
+  adminListTeamEvaluations, adminReopenEvaluation, adminDeleteEvaluation,
 } from "../data.js?v=17";
 import { supabase } from "../supabase.js?v=17";
 import { parseFile } from "../parsers.js?v=17";
@@ -524,19 +524,35 @@ async function mountTeamEvaluations(root, team) {
       const isSubmitted = r.status === "submitted";
       const evalName = r.evaluator?.profile?.display_name || r.evaluator?.profile?.[0]?.display_name || "(sin nombre)";
       const phaseLabel = r.phase === "sustentation" ? "Sustentación" : r.phase === "field_contest" ? "Concurso" : r.phase;
-      const card = el("div", { class: "card card--pad-sm flex items-center gap-3" }, [
-        el("div", { style: { flex: "1" } }, [
+      const actions = [];
+      if (isSubmitted) {
+        actions.push(el("button", { class: "btn btn--warning btn--sm", text: "Reabrir", onclick: async () => {
+          const ok = await confirmDialog("¿Reabrir la evaluación? El jurado podrá modificarla y dejará de contar en el ranking hasta que la envíe nuevamente.", { okLabel: "Reabrir" });
+          if (!ok) return;
+          try { await adminReopenEvaluation(r.id); toast("Evaluación reabierta", "success"); await refresh(); }
+          catch (e) { toast("No se pudo reabrir: " + (e?.message || ""), "error"); }
+        } }));
+      } else {
+        actions.push(el("span", { class: "pill pill--warning", text: "Borrador" }));
+      }
+      // Borrar siempre disponible. Útil para limpiar pruebas o cuando el
+      // jurado calificó al equipo equivocado.
+      actions.push(el("button", { class: "btn btn--danger btn--sm", text: "Borrar", onclick: async () => {
+        const ok = await confirmDialog(
+          `¿Borrar definitivamente la evaluación de ${evalName} para este equipo? Se eliminan también todas las respuestas guardadas. El ranking se recalcula automáticamente.`,
+          { okLabel: "Borrar", danger: true },
+        );
+        if (!ok) return;
+        try { await adminDeleteEvaluation(r.id); toast("Evaluación eliminada", "success"); await refresh(); }
+        catch (e) { toast("No se pudo borrar: " + (e?.message || ""), "error"); }
+      } }));
+
+      const card = el("div", { class: "card card--pad-sm flex items-center gap-3 flex-wrap" }, [
+        el("div", { style: { flex: "1 1 200px", minWidth: "0" } }, [
           el("div", { class: "text-strong", text: evalName }),
           el("div", { class: "text-muted", text: `${phaseLabel} · ${isSubmitted ? "Enviada" : "Borrador"} · Total: ${fmtScore(r.total_score ?? 0)}` }),
         ]),
-        isSubmitted
-          ? el("button", { class: "btn btn--warning btn--sm", text: "Reabrir", onclick: async () => {
-              const ok = await confirmDialog("¿Reabrir la evaluación? El jurado podrá modificarla y dejará de contar en el ranking hasta que la envíe nuevamente.", { okLabel: "Reabrir" });
-              if (!ok) return;
-              try { await adminReopenEvaluation(r.id); toast("Evaluación reabierta", "success"); await refresh(); }
-              catch (e) { toast("No se pudo reabrir: " + (e?.message || ""), "error"); }
-            } })
-          : el("span", { class: "pill pill--warning", text: "Borrador" }),
+        el("div", { class: "btn-row" }, actions),
       ]);
       list.append(card);
     });
