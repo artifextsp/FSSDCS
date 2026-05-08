@@ -214,6 +214,25 @@ export async function teamPortalLookup(slug, name) {
   return data;
 }
 
+export async function searchTeamsByName(editionSlug, query) {
+  if (!editionSlug || !query || query.trim().length < 2) return [];
+  const { data: edition, error: edErr } = await supabase
+    .from("editions")
+    .select("id")
+    .eq("slug", editionSlug.trim())
+    .maybeSingle();
+  if (edErr || !edition) return [];
+  const { data, error } = await supabase
+    .from("teams")
+    .select("id, name, project:projects(name)")
+    .eq("edition_id", edition.id)
+    .ilike("name", `%${query.trim()}%`)
+    .order("name", { ascending: true })
+    .limit(10);
+  if (error) return [];
+  return data ?? [];
+}
+
 /* ---------------- Evaluator (jury) ---------------- */
 export async function listMyAssignedProjects() {
   // Filtramos explícitamente por el user_id del jurado actual. Para un
@@ -501,10 +520,29 @@ export async function updateEvaluatorProfile({ userId, displayName }) {
   return true;
 }
 
-export async function sendEvaluatorPasswordReset(email) {
-  if (!email) throw new Error("Falta el correo.");
-  const { error } = await supabase.auth.resetPasswordForEmail(email.trim().toLowerCase());
-  if (error) throw error;
+export async function adminResetEvaluatorPassword(userId, newPassword) {
+  if (!userId) throw new Error("Falta el usuario.");
+  if (!newPassword || newPassword.length < 6) throw new Error("La contraseña debe tener al menos 6 caracteres.");
+  const session = (await supabase.auth.getSession())?.data?.session;
+  const accessToken = session?.access_token;
+  if (!accessToken) throw new Error("Tu sesión expiró. Vuelve a iniciar sesión.");
+  const url = `${SUPABASE_URL}/functions/v1/reset-evaluator-password`;
+  const res = await fetch(url, {
+    method: "POST",
+    headers: {
+      "Content-Type": "application/json",
+      apikey: SUPABASE_KEY,
+      Authorization: `Bearer ${accessToken}`,
+    },
+    body: JSON.stringify({ userId, newPassword }),
+  });
+  const body = await res.json().catch(() => null);
+  if (!res.ok || !body?.ok) {
+    const code = body?.error || `http_${res.status}`;
+    if (code === "weak_password") throw new Error("La contraseña debe tener al menos 6 caracteres.");
+    if (code === "forbidden") throw new Error("No tienes permisos para hacer esto.");
+    throw new Error("No se pudo cambiar la contraseña: " + code);
+  }
   return true;
 }
 

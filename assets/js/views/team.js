@@ -1,5 +1,5 @@
 import { clear, el, fmtScore, toast } from "../utils.js?v=15";
-import { listEditionsAccessible, teamPortalLookup, signedPhotoUrl, resolveDocUrl } from "../data.js?v=15";
+import { listEditionsAccessible, teamPortalLookup, searchTeamsByName, signedPhotoUrl, resolveDocUrl } from "../data.js?v=15";
 import { getCurrentEdition, setCurrentEdition } from "../state.js?v=15";
 
 export async function renderTeam() {
@@ -9,7 +9,7 @@ export async function renderTeam() {
   main.append(wrap);
 
   wrap.append(el("h1", { text: "Mi equipo" }));
-  wrap.append(el("p", { class: "text-muted", text: "Ingresa el nombre de tu equipo para ver tu proyecto, calificaciones, aula y orden de exposición." }));
+  wrap.append(el("p", { class: "text-muted", text: "Escribe parte del nombre de tu equipo para buscarlo." }));
 
   const editions = await listEditionsAccessible().catch(() => []);
   const stored = getCurrentEdition();
@@ -20,15 +20,59 @@ export async function renderTeam() {
     if (stored?.slug) slugSelect.value = stored.slug;
   }
 
-  const nameInput = el("input", { class: "input", placeholder: "Nombre exacto del equipo", required: true, autocomplete: "off" });
+  const nameInput = el("input", {
+    class: "input",
+    placeholder: "Escribe parte del nombre (ej: robot, los, aste…)",
+    required: true,
+    autocomplete: "off",
+  });
+  const suggestions = el("div", { class: "team-suggestions" });
   const result = el("div", { class: "mt-5" });
 
-  const form = el("form", { class: "card", onsubmit: async (e) => {
-    e.preventDefault();
+  let searchTimer = null;
+  nameInput.addEventListener("input", () => {
+    clearTimeout(searchTimer);
+    const q = nameInput.value.trim();
+    clear(suggestions);
+    if (q.length < 2) return;
+    searchTimer = setTimeout(async () => {
+      const slug = slugSelect.value.trim();
+      if (!slug) return;
+      const teams = await searchTeamsByName(slug, q).catch(() => []);
+      clear(suggestions);
+      if (!teams.length) {
+        suggestions.append(el("div", { class: "team-suggestions__empty", text: "Sin coincidencias" }));
+        return;
+      }
+      teams.forEach((t) => {
+        const btn = el("button", {
+          class: "team-suggestions__item",
+          type: "button",
+          onclick: () => {
+            nameInput.value = t.name;
+            clear(suggestions);
+            doLookup(t.name);
+          },
+        }, [
+          el("span", { class: "team-suggestions__name", text: t.name }),
+          el("span", { class: "team-suggestions__project", text: t.project?.name || "" }),
+        ]);
+        suggestions.append(btn);
+      });
+    }, 280);
+  });
+
+  slugSelect.addEventListener("change", () => {
+    clear(suggestions);
+    nameInput.value = "";
+    clear(result);
+  });
+
+  async function doLookup(name) {
     const slug = slugSelect.value.trim();
-    const name = nameInput.value.trim();
     if (!slug || !name) return toast("Completa edición y nombre del equipo", "error");
     clear(result);
+    clear(suggestions);
     result.append(el("p", { class: "text-muted", text: "Buscando…" }));
     try {
       const r = await teamPortalLookup(slug, name);
@@ -40,14 +84,22 @@ export async function renderTeam() {
       const ed = editions.find((e) => e.slug === slug);
       if (ed) setCurrentEdition(ed);
       await paintResult(result, r);
-    } catch (err) {
+    } catch {
       clear(result);
       result.append(el("div", { class: "error-banner", text: "No se pudo realizar la búsqueda." }));
     }
+  }
+
+  const form = el("form", { class: "card", onsubmit: async (e) => {
+    e.preventDefault();
+    await doLookup(nameInput.value.trim());
   }}, [
     el("div", { class: "field-row field-row--2" }, [
       el("div", { class: "field" }, [el("label", { class: "field__label", text: "Edición" }), slugSelect]),
-      el("div", { class: "field" }, [el("label", { class: "field__label", text: "Nombre del equipo" }), nameInput]),
+      el("div", { class: "field" }, [
+        el("label", { class: "field__label", text: "Nombre del equipo" }),
+        el("div", { class: "team-search-wrap" }, [nameInput, suggestions]),
+      ]),
     ]),
     el("button", { class: "btn btn--primary btn--lg", type: "submit", text: "Ver mi equipo" }),
   ]);

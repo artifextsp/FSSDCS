@@ -32,17 +32,82 @@ if (yearEl) yearEl.textContent = new Date().getFullYear();
 
 /* ---- Auth slot in nav ---- */
 const authSlot = $("[data-auth-slot]");
+
+function openLoginModal() {
+  const emailEl = el("input", { class: "input", type: "email", placeholder: "correo@ejemplo.com", autocomplete: "email" });
+  const passEl = el("input", { class: "input", type: "password", placeholder: "Contraseña", autocomplete: "current-password" });
+  const errEl = el("div", { class: "error-banner", style: { display: "none" } });
+
+  const form = el("form", {
+    class: "flex-col gap-3",
+    onsubmit: async (e) => {
+      e.preventDefault();
+      errEl.style.display = "none";
+      const btn = form.querySelector("button[type=submit]");
+      btn.disabled = true;
+      btn.textContent = "Ingresando…";
+      try {
+        const { signInWithPassword } = await import("./auth.js?v=15");
+        await signInWithPassword(emailEl.value.trim(), passEl.value);
+        const { getAuthSnapshot } = await import("./auth.js?v=15");
+        const { profile } = getAuthSnapshot();
+        // Redirect based on role
+        if (profile?.role === "admin") navigate("/admin");
+        else if (profile?.role === "evaluator") navigate("/jurado");
+        else navigate("/");
+        // Close modal
+        const modal = document.querySelector(".modal-overlay");
+        modal?.remove();
+      } catch (err) {
+        errEl.textContent = err?.message || "Correo o contraseña incorrectos.";
+        errEl.style.display = "";
+        btn.disabled = false;
+        btn.textContent = "Ingresar";
+      }
+    },
+  }, [
+    el("p", { class: "text-muted", style: { margin: 0 }, text: "Ingresa como Administrador o Jurado." }),
+    errEl,
+    el("div", { class: "field" }, [el("label", { class: "field__label", text: "Correo" }), emailEl]),
+    el("div", { class: "field" }, [el("label", { class: "field__label", text: "Contraseña" }), passEl]),
+    el("button", { class: "btn btn--primary btn--block", type: "submit", text: "Ingresar" }),
+  ]);
+
+  const overlay = el("div", { class: "modal-overlay" }, [
+    el("div", { class: "modal", style: { maxWidth: "360px" } }, [
+      el("div", { class: "modal__header" }, [
+        el("h2", { class: "modal__title", text: "Iniciar sesión" }),
+        el("button", {
+          class: "modal__close",
+          type: "button",
+          text: "✕",
+          onclick: () => overlay.remove(),
+        }),
+      ]),
+      el("div", { class: "modal__body" }, [form]),
+    ]),
+  ]);
+  overlay.addEventListener("click", (e) => { if (e.target === overlay) overlay.remove(); });
+  document.body.append(overlay);
+  setTimeout(() => emailEl.focus(), 50);
+}
+
 function paintAuth({ session, profile }) {
   if (!authSlot) return;
   clear(authSlot);
-  if (!session) return;
-  const name = profile?.display_name || session.user.email;
-  const role = profile?.role || "—";
-  authSlot.append(
-    el("span", { class: "pill pill--primary", text: role }),
-    el("span", { class: "text-muted", text: name }),
-    el("button", { class: "btn btn--ghost btn--sm", text: "Salir", onclick: async () => { await signOut(); navigate("/"); } })
-  );
+  if (!session) {
+    authSlot.append(
+      el("button", { class: "btn btn--primary btn--sm", text: "Iniciar sesión", onclick: openLoginModal }),
+    );
+  } else {
+    const name = profile?.display_name || session.user.email;
+    const role = profile?.role || "—";
+    authSlot.append(
+      el("span", { class: "pill pill--primary", text: role }),
+      el("span", { class: "text-muted", style: { fontSize: "0.85rem" }, text: name }),
+      el("button", { class: "btn btn--ghost btn--sm", text: "Salir", onclick: async () => { await signOut(); navigate("/"); } }),
+    );
+  }
   // Show/hide role-only nav items
   $$("[data-role-only]").forEach((node) => {
     const want = node.getAttribute("data-role-only");

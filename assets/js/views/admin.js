@@ -7,7 +7,7 @@ import {
   listTeamsByProject, getTeamFull, createTeam, updateTeam, deleteTeam,
   replaceTeamMembers, listTeamMembers,
   listEvaluators, setAssignment, listAssignmentsForEdition,
-  createEvaluatorAccount, updateEvaluatorProfile,
+  createEvaluatorAccount, updateEvaluatorProfile, adminResetEvaluatorPassword,
   listConfigs, upsertActiveConfig,
   uploadProjectDocument, addProjectLink, deleteProjectDocument, resolveDocUrl,
   uploadTeamPhoto, deleteTeamPhoto, signedPhotoUrl, listTeamPhotos,
@@ -891,6 +891,7 @@ async function renderEvaluatorsAdmin(body) {
       ]),
       el("div", { class: "btn-row", style: { flexWrap: "wrap" } }, [
         el("button", { class: "btn btn--ghost btn--sm", text: "Editar nombre", onclick: () => openEditName(ev) }),
+        el("button", { class: "btn btn--ghost btn--sm", text: "Cambiar contraseña", onclick: () => openResetPassword(ev) }),
         el("button", { class: "btn btn--ghost btn--sm", text: ev.active ? "Desactivar" : "Activar", onclick: async () => {
           const { error } = await supabase.from("evaluators").update({ active: !ev.active }).eq("id", ev.id);
           if (error) toast("Error: " + error.message, "error"); else { toast("Actualizado", "success"); renderAdmin({ section: "jurados" }); }
@@ -957,6 +958,32 @@ async function renderEvaluatorsAdmin(body) {
       ],
     });
     if (r) { toast("Nombre actualizado", "success"); renderAdmin({ section: "jurados" }); }
+  }
+
+  async function openResetPassword(ev) {
+    const passEl = el("input", { class: "input", type: "text", value: generatePassword(), autocomplete: "off" });
+    const regenBtn = el("button", { class: "btn btn--ghost btn--sm", type: "button", text: "Generar otra", onclick: () => { passEl.value = generatePassword(); } });
+    const r = await openModal({
+      title: "Cambiar contraseña",
+      body: el("div", {}, [
+        el("p", { class: "text-muted", style: { marginBottom: "var(--space-3)" }, text: `Jurado: ${ev.profile?.display_name || "—"}` }),
+        el("div", { class: "field" }, [
+          el("label", { class: "field__label", text: "Nueva contraseña" }),
+          el("div", { class: "flex gap-2 items-center" }, [passEl, regenBtn]),
+          el("p", { class: "field__hint", text: "El jurado deberá cambiarla al iniciar sesión." }),
+        ]),
+      ]),
+      actions: [
+        { label: "Cancelar", onClick: () => null },
+        { label: "Cambiar contraseña", variant: "primary", onClick: async () => {
+          await adminResetEvaluatorPassword(ev.user_id, passEl.value);
+          return { password: passEl.value };
+        } },
+      ],
+    });
+    if (r?.password) {
+      toast(`Contraseña cambiada. Nueva: ${r.password}`, "success");
+    }
   }
 }
 

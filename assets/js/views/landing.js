@@ -10,7 +10,7 @@ export async function renderLanding() {
 
   const heroActions = el("div", { class: "hero__actions" }, [
     el("a", { class: "btn btn--primary btn--lg", href: "#/proyectos", text: "Explorar proyectos" }),
-    el("a", { class: "btn btn--ghost btn--lg", href: "#/ranking", text: "Ver ranking" }),
+    el("a", { class: "btn btn--warning btn--lg", href: "#/ranking", text: "Ver ranking" }),
     el("a", { class: "btn btn--accent btn--lg", href: "#/equipo", text: "Soy de un equipo" }),
   ]);
 
