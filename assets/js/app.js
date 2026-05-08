@@ -1,21 +1,21 @@
-import { defineRoute, startRouter, navigate, refreshCurrent } from "./router.js?v=15";
-import { onAuthChange, refreshAuth, signOut } from "./auth.js?v=15";
-import { loadInitialEdition, onEditionChange } from "./state.js?v=15";
-import { $, $$, el, clear } from "./utils.js?v=15";
-import { supabase } from "./supabase.js?v=15";
+import { defineRoute, startRouter, navigate, refreshCurrent } from "./router.js?v=16";
+import { onAuthChange, refreshAuth, signOut } from "./auth.js?v=16";
+import { loadInitialEdition, onEditionChange } from "./state.js?v=16";
+import { $, $$, el, clear } from "./utils.js?v=16";
+import { supabase } from "./supabase.js?v=16";
 
 console.log("[boot] app.js evaluado");
 
-import { renderLanding } from "./views/landing.js?v=15";
-import { renderProjects } from "./views/public_projects.js?v=15";
-import { renderProject } from "./views/public_project.js?v=15";
-import { renderRanking } from "./views/public_ranking.js?v=15";
-import { renderTeam } from "./views/team.js?v=15";
-import { renderJury } from "./views/jury.js?v=15";
-import { renderJuryEvaluate } from "./views/jury_evaluate.js?v=15";
-import { renderJuryTeamEvaluate } from "./views/jury_evaluate.js?v=15";
-import { renderPublicTeam } from "./views/public_team.js?v=15";
-import { renderAdmin } from "./views/admin.js?v=15";
+import { renderLanding } from "./views/landing.js?v=16";
+import { renderProjects } from "./views/public_projects.js?v=16";
+import { renderProject } from "./views/public_project.js?v=16";
+import { renderRanking } from "./views/public_ranking.js?v=16";
+import { renderTeam } from "./views/team.js?v=16";
+import { renderJury } from "./views/jury.js?v=16";
+import { renderJuryEvaluate } from "./views/jury_evaluate.js?v=16";
+import { renderJuryTeamEvaluate } from "./views/jury_evaluate.js?v=16";
+import { renderPublicTeam } from "./views/public_team.js?v=16";
+import { renderAdmin } from "./views/admin.js?v=16";
 
 /* ---- Header interactions ---- */
 const navToggle = $("[data-nav-toggle]");
@@ -48,9 +48,9 @@ function openLoginModal() {
       btn.disabled = true;
       btn.textContent = "Ingresando…";
       try {
-        const { signInWithPassword } = await import("./auth.js?v=15");
+        const { signInWithPassword } = await import("./auth.js?v=16");
         await signInWithPassword(emailEl.value.trim(), passEl.value);
-        const { getAuthSnapshot } = await import("./auth.js?v=15");
+        const { getAuthSnapshot } = await import("./auth.js?v=16");
         const { profile } = getAuthSnapshot();
         // Redirect based on role
         if (profile?.role === "admin") navigate("/admin");

@@ -1,5 +1,5 @@
-import { supabase } from "./supabase.js?v=15";
-import { SUPABASE_URL, SUPABASE_KEY } from "./config.js?v=15";
+import { supabase } from "./supabase.js?v=16";
+import { SUPABASE_URL, SUPABASE_KEY } from "./config.js?v=16";
 
 /* ---------------- Editions ---------------- */
 export async function listEditionsAccessible() {
@@ -332,6 +332,51 @@ export async function setEvaluationStatus(evaluationId, status, notes) {
   const { data, error } = await supabase.from("evaluations").update(patch).eq("id", evaluationId).select("*").single();
   if (error) throw error;
   return data;
+}
+
+// Devuelve un resumen de mis evaluaciones (status + total) por proyecto, para
+// pintar el progreso en la tarjeta de proyecto del jurado y badges en cada
+// equipo. Filtra por user_id porque la RLS de admin permitiría ver todo.
+export async function listMyEvaluationsForProjects(projectIds) {
+  if (!projectIds?.length) return [];
+  const session = (await supabase.auth.getSession())?.data?.session;
+  const userId = session?.user?.id;
+  if (!userId) return [];
+  // Resolvemos primero el evaluator_id para no mezclar otros jurados.
+  const { data: evRow, error: ee } = await supabase
+    .from("evaluators").select("id").eq("user_id", userId);
+  if (ee) throw ee;
+  const evIds = (evRow ?? []).map((r) => r.id);
+  if (!evIds.length) return [];
+  const { data, error } = await supabase
+    .from("evaluations")
+    .select("id, project_id, team_id, status, total_score, evaluator_id, evaluation_config_id, phase, updated_at")
+    .in("project_id", projectIds)
+    .in("evaluator_id", evIds);
+  if (error) throw error;
+  return data ?? [];
+}
+
+// Reabre una evaluación enviada (solo admin via RPC).
+export async function adminReopenEvaluation(evaluationId) {
+  const { data, error } = await supabase.rpc("admin_reopen_evaluation", { p_evaluation_id: evaluationId });
+  if (error) throw error;
+  return data;
+}
+
+// Lista todas las evaluaciones (cualquier jurado) de un equipo, para que el
+// admin vea quiénes calificaron y pueda reabrir.
+export async function adminListTeamEvaluations(teamId) {
+  const { data, error } = await supabase
+    .from("evaluations")
+    .select(`
+      id, status, total_score, phase, evaluation_config_id, updated_at,
+      evaluator:evaluators!inner(id, user_id, profile:profiles(display_name))
+    `)
+    .eq("team_id", teamId)
+    .order("updated_at", { ascending: false });
+  if (error) throw error;
+  return data ?? [];
 }
 
 /* ---------------- Photos (por equipo) ---------------- */

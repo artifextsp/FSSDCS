@@ -389,6 +389,53 @@
   border-radius: var(--radius-md);
   font-size: 0.9rem;
 }
+.info-banner {
+  background: rgba(240, 182, 90, 0.12);
+  border: 1px solid rgba(240, 182, 90, 0.4);
+  color: #ffd9a3;
+  padding: var(--space-3) var(--space-4);
+  border-radius: var(--radius-md);
+  font-size: 0.9rem;
+  margin-top: var(--space-3);
+}
+
+/* Progreso de evaluación en cards de jurado --------------------------------- */
+.jury-progress {
+  margin-top: var(--space-3);
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+}
+.jury-progress__head {
+  display: flex;
+  justify-content: space-between;
+  font-size: 0.8rem;
+  gap: var(--space-2);
+}
+.jury-progress__track {
+  height: 6px;
+  background: rgba(255, 255, 255, 0.08);
+  border-radius: 999px;
+  overflow: hidden;
+}
+.jury-progress__fill {
+  height: 100%;
+  background: linear-gradient(90deg, var(--color-accent), var(--color-primary));
+  transition: width 240ms ease;
+}
+.jury-progress__badges {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-2);
+}
+
+/* Estado bloqueado del formulario de evaluación ------------------------------ */
+.is-locked .score-input__btn,
+.is-locked .input,
+.is-locked .textarea {
+  opacity: 0.7;
+  cursor: not-allowed;
+}
 
 /* ============== Login screens ============== */
 .auth-shell {

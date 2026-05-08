@@ -1,5 +1,5 @@
-import { clear, el, fmtScore, toast, confirmDialog } from "../utils.js?v=15";
-import { getAuthSnapshot } from "../auth.js?v=15";
+import { clear, el, fmtScore, toast, confirmDialog } from "../utils.js?v=16";
+import { getAuthSnapshot } from "../auth.js?v=16";
 import {
   getProject,
   listTeamsByProject,
@@ -14,10 +14,11 @@ import {
   deleteTeamPhoto,
   signedPhotoUrl,
   listConfigs,
-} from "../data.js?v=15";
+  listMyEvaluationsForProjects,
+} from "../data.js?v=16";
 
-import { navigate } from "../router.js?v=15";
-import { subscribeTable } from "../realtime.js?v=15";
+import { navigate } from "../router.js?v=16";
+import { subscribeTable } from "../realtime.js?v=16";
 
 /* ============ Pantalla 1: Lista de equipos del proyecto a evaluar ============ */
 export async function renderJuryEvaluate(projectId) {
@@ -64,10 +65,29 @@ export async function renderJuryEvaluate(projectId) {
     return;
   }
 
+  // Pre-cargo mis evaluaciones de este proyecto para pintar el estado por
+  // equipo (Enviada / Borrador / Pendiente) y el total que le di a cada uno.
+  const myEvals = await listMyEvaluationsForProjects([projectId]).catch(() => []);
+  const evByTeam = {};
+  myEvals.forEach((ev) => {
+    if (!evByTeam[ev.team_id]) evByTeam[ev.team_id] = [];
+    evByTeam[ev.team_id].push(ev);
+  });
+
   const grid = el("div", { class: "grid grid--cards mt-3" });
   wrap.append(grid);
   for (const t of teams) {
     const memberCount = (await listTeamMembers(t.id).catch(() => [])).length;
+    const evals = evByTeam[t.id] || [];
+    const allSubmitted = evals.length > 0 && evals.every((e) => e.status === "submitted");
+    const someDraft = evals.some((e) => e.status === "draft");
+    const myTotal = evals.reduce((a, e) => a + (Number(e.total_score) || 0), 0);
+
+    let statusPill;
+    if (allSubmitted) statusPill = el("span", { class: "pill pill--accent", text: `Enviada · ${fmtScore(myTotal)}` });
+    else if (someDraft) statusPill = el("span", { class: "pill pill--warning", text: `Borrador · ${fmtScore(myTotal)}` });
+    else statusPill = el("span", { class: "pill", text: "Pendiente" });
+
     grid.append(el("a", { class: "project-card", href: `#/jurado/equipo/${t.id}` }, [
       el("div", { class: "project-card__cover project-card__cover--placeholder" }),
       el("div", { class: "project-card__title", text: t.name }),
@@ -76,7 +96,8 @@ export async function renderJuryEvaluate(projectId) {
         t.presentation_order != null && `Orden ${t.presentation_order}`,
         `${memberCount} integrante(s)`,
       ].filter(Boolean).join(" · ") || "—" }),
-      el("div", { class: "btn btn--primary btn--sm", text: "Evaluar →" }),
+      el("div", { class: "flex items-center gap-2 mt-2" }, [statusPill]),
+      el("div", { class: "btn btn--primary btn--sm mt-2", text: allSubmitted ? "Ver evaluación" : "Evaluar →" }),
     ]));
   }
 }
@@ -184,16 +205,28 @@ async function mountConfigForm(root, cfg, { team, project, evaluatorId }) {
   head.append(totalEl);
   head.append(statusPill(evaluation.status));
 
+  // Aviso de bloqueo cuando la evaluación ya fue enviada. El admin tiene que
+  // reabrirla desde el panel para que el jurado pueda volver a editar.
+  const lockedBanner = el("div", { class: "info-banner", text: "Esta evaluación ya fue enviada y está bloqueada. Si necesitas corregirla, pídele al administrador que la reabra desde el panel.", style: { display: evaluation.status === "submitted" ? "block" : "none" } });
+  root.append(lockedBanner);
+
   const items = buildItems(cfg);
   const form = el("div", { class: "flex-col gap-3" });
   root.append(form);
 
   const finalItems = applyRandomPick(cfg, items, answers);
 
+  const isLocked = () => evaluation.status === "submitted";
+
   finalItems.forEach((it) => form.append(itemRow(it, {
     cfg,
     answer: answers.find((a) => a.item_key === it.item_key) || null,
+    isLocked,
     onChange: async (patch) => {
+      if (isLocked()) {
+        toast("La evaluación está enviada y bloqueada", "warning");
+        return;
+      }
       try {
         const saved = await upsertAnswer({
           evaluationId: evaluation.id,
@@ -216,27 +249,29 @@ async function mountConfigForm(root, cfg, { team, project, evaluatorId }) {
     placeholder: "Observaciones generales (opcional)",
     value: evaluation.notes || "",
     onblur: async (e) => {
+      if (isLocked()) return;
       try { evaluation = await setEvaluationStatus(evaluation.id, evaluation.status, e.target.value); }
       catch (err) { toast("No se pudo guardar la nota", "error"); }
     },
   });
 
-  const actions = el("div", { class: "btn-row mt-4" }, [
-    el("button", { class: "btn btn--ghost", text: "Guardar borrador", onclick: async () => {
-      try { evaluation = await setEvaluationStatus(evaluation.id, "draft"); paintStatus(); toast("Borrador guardado", "success"); }
-      catch (e) { toast("No se pudo guardar", "error"); }
-    } }),
-    el("button", { class: "btn btn--primary", text: "Enviar evaluación", onclick: async () => {
-      const ok = await confirmDialog("Al enviar, tu evaluación contará para el ranking. ¿Confirmar?", { okLabel: "Enviar" });
-      if (!ok) return;
-      try {
-        evaluation = await setEvaluationStatus(evaluation.id, "submitted", notes.value);
-        paintStatus();
-        toast("Evaluación enviada", "success");
-      } catch (e) { toast("No se pudo enviar: " + (e.message || ""), "error"); }
-    } }),
-  ]);
+  const draftBtn = el("button", { class: "btn btn--ghost", text: "Guardar borrador", onclick: async () => {
+    try { evaluation = await setEvaluationStatus(evaluation.id, "draft"); paintStatus(); toast("Borrador guardado", "success"); }
+    catch (e) { toast("No se pudo guardar", "error"); }
+  } });
+  const sendBtn = el("button", { class: "btn btn--primary", text: "Enviar evaluación", onclick: async () => {
+    const ok = await confirmDialog("Al enviar, tu evaluación contará para el ranking y NO podrás modificarla. Solo el admin puede reabrirla. ¿Confirmar?", { okLabel: "Enviar" });
+    if (!ok) return;
+    try {
+      evaluation = await setEvaluationStatus(evaluation.id, "submitted", notes.value);
+      paintStatus();
+      toast("Evaluación enviada", "success");
+    } catch (e) { toast("No se pudo enviar: " + (e.message || ""), "error"); }
+  } });
+  const actions = el("div", { class: "btn-row mt-4" }, [draftBtn, sendBtn]);
   root.append(notes, actions);
+
+  applyLockUI();
 
   const unsub = subscribeTable({
     table: "evaluations",
@@ -255,6 +290,21 @@ async function mountConfigForm(root, cfg, { team, project, evaluatorId }) {
     const oldPill = head.querySelector("[data-status-pill]");
     if (oldPill) oldPill.remove();
     head.append(statusPill(evaluation.status));
+    applyLockUI();
+  }
+
+  // Aplica el bloqueo visual (form deshabilitado + banner) según el estado
+  // actual de la evaluación.
+  function applyLockUI() {
+    const locked = evaluation.status === "submitted";
+    lockedBanner.style.display = locked ? "block" : "none";
+    notes.disabled = locked;
+    sendBtn.disabled = locked;
+    draftBtn.style.display = locked ? "none" : "";
+    sendBtn.style.display = locked ? "none" : "";
+    form.querySelectorAll("button.score-input__btn, input.input, textarea")
+      .forEach((node) => { node.disabled = locked; });
+    form.classList.toggle("is-locked", locked);
   }
 }
 
@@ -362,7 +412,8 @@ function shuffle(arr) {
   }
 }
 
-function itemRow(item, { cfg, answer, onChange }) {
+function itemRow(item, { cfg, answer, onChange, isLocked }) {
+  const lockedFn = typeof isLocked === "function" ? isLocked : () => false;
   const card = el("div", { class: "card card--pad-sm flex-col gap-3" });
   card.append(el("div", { class: "flex items-center gap-2" }, [
     el("span", { class: "pill", text: typeLabel(item.type) }),
@@ -393,12 +444,14 @@ function itemRow(item, { cfg, answer, onChange }) {
         type: "button",
         text: String(v),
         onclick: () => {
+          if (lockedFn()) return;
           currentScore = v;
           buttons.forEach((bb) => bb.classList.toggle("is-active", Number(bb.textContent) === v));
           onChange({ score: currentScore, observation: currentObs });
         },
       });
       if (currentScore === v) b.classList.add("is-active");
+      if (lockedFn()) b.disabled = true;
       buttons.push(b);
       scoreInput.append(b);
     }

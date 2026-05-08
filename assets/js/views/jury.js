@@ -1,7 +1,11 @@
-import { clear, el, fmtScore, toast } from "../utils.js?v=15";
-import { getAuthSnapshot, signInWithPassword, signOut } from "../auth.js?v=15";
-import { listMyAssignedProjects } from "../data.js?v=15";
-import { supabase } from "../supabase.js?v=15";
+import { clear, el, fmtScore, toast } from "../utils.js?v=16";
+import { getAuthSnapshot, signInWithPassword, signOut } from "../auth.js?v=16";
+import {
+  listMyAssignedProjects,
+  listTeamsByProject,
+  listMyEvaluationsForProjects,
+} from "../data.js?v=16";
+import { supabase } from "../supabase.js?v=16";
 
 export async function renderJury() {
   const main = document.querySelector("[data-app-main]");
@@ -56,7 +60,75 @@ export async function renderJury() {
     list.append(el("div", { class: "empty", text: "Aún no tienes proyectos asignados." }));
     return;
   }
+
+  // Resumen de mis evaluaciones (por equipo) para construir el progreso de
+  // cada proyecto y el promedio personal.
+  const projectIds = projects.map((p) => p.id);
+  const [myEvals, teamsByProject] = await Promise.all([
+    listMyEvaluationsForProjects(projectIds).catch(() => []),
+    Promise.all(projectIds.map((pid) => listTeamsByProject(pid).catch(() => [])))
+      .then((arr) => Object.fromEntries(arr.map((teams, i) => [projectIds[i], teams]))),
+  ]);
+
+  // Aggregamos por proyecto: cantidad de equipos, equipos enviados, equipos
+  // en borrador, promedio del jurado (entre los enviados).
+  const aggByProject = {};
   projects.forEach((p) => {
+    aggByProject[p.id] = {
+      teams: teamsByProject[p.id] || [],
+      submitted: 0,
+      draft: 0,
+      submittedScores: [],
+    };
+  });
+  // Agrupamos evaluaciones por (project_id, team_id). Si hay varias fases para
+  // un mismo equipo, una sola cuenta como "evaluado" si todas las fases del
+  // equipo están enviadas; si alguna queda en borrador o falta, contamos como
+  // borrador / pendiente respectivamente.
+  const phaseByTeam = {};
+  myEvals.forEach((ev) => {
+    const key = `${ev.project_id}:${ev.team_id}`;
+    if (!phaseByTeam[key]) phaseByTeam[key] = { project_id: ev.project_id, team_id: ev.team_id, evals: [] };
+    phaseByTeam[key].evals.push(ev);
+  });
+
+  Object.values(phaseByTeam).forEach((bucket) => {
+    const agg = aggByProject[bucket.project_id];
+    if (!agg) return;
+    const allSubmitted = bucket.evals.length > 0 && bucket.evals.every((e) => e.status === "submitted");
+    if (allSubmitted) {
+      agg.submitted += 1;
+      const totals = bucket.evals.map((e) => Number(e.total_score) || 0);
+      const sum = totals.reduce((a, b) => a + b, 0);
+      // El total que el jurado le dio al equipo = suma de fases (sustentación + concurso, etc.)
+      agg.submittedScores.push(sum);
+    } else {
+      agg.draft += 1;
+    }
+  });
+
+  projects.forEach((p) => {
+    const agg = aggByProject[p.id];
+    const totalTeams = agg.teams.length;
+    const submitted = agg.submitted;
+    const draft = agg.draft;
+    const pending = Math.max(0, totalTeams - submitted - draft);
+    const avg = agg.submittedScores.length
+      ? agg.submittedScores.reduce((a, b) => a + b, 0) / agg.submittedScores.length
+      : null;
+
+    const progressPct = totalTeams ? Math.round((submitted / totalTeams) * 100) : 0;
+
+    const progressBar = el("div", { class: "jury-progress__track" }, [
+      el("div", { class: "jury-progress__fill", style: { width: `${progressPct}%` } }),
+    ]);
+
+    const badges = el("div", { class: "jury-progress__badges" }, [
+      el("span", { class: "pill pill--accent", text: `${submitted} enviados` }),
+      draft ? el("span", { class: "pill pill--warning", text: `${draft} borrador` }) : null,
+      pending ? el("span", { class: "pill", text: `${pending} pendientes` }) : null,
+    ].filter(Boolean));
+
     list.append(el("a", {
       class: "project-card",
       href: `#/jurado/proyecto/${p.id}`,
@@ -64,6 +136,14 @@ export async function renderJury() {
       el("div", { class: "project-card__cover project-card__cover--placeholder" }),
       el("div", { class: "project-card__title", text: p.name }),
       el("div", { class: "project-card__meta", text: [p.grade_label, p.room].filter(Boolean).join(" · ") || "—" }),
+      el("div", { class: "jury-progress" }, [
+        el("div", { class: "jury-progress__head" }, [
+          el("span", { class: "text-muted", text: `${submitted}/${totalTeams} equipos evaluados` }),
+          el("span", { class: "text-strong", text: avg != null ? `Promedio personal: ${fmtScore(avg)}` : "Sin envíos aún" }),
+        ]),
+        progressBar,
+        badges,
+      ]),
       el("div", { class: "btn btn--primary btn--sm", text: "Evaluar →" }),
     ]));
   });

@@ -1,5 +1,5 @@
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2.45.4?bundle";
-import { SUPABASE_URL, SUPABASE_KEY } from "./config.js?v=15";
+import { SUPABASE_URL, SUPABASE_KEY } from "./config.js?v=16";
 
 export const STORAGE_KEY = "feria-steam-auth";
 

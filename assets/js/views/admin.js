@@ -1,6 +1,6 @@
-import { clear, el, toast, confirmDialog, slugify, fmtScore, openModal } from "../utils.js?v=15";
-import { getAuthSnapshot, signInWithPassword, signOut } from "../auth.js?v=15";
-import { getCurrentEdition, setCurrentEdition } from "../state.js?v=15";
+import { clear, el, toast, confirmDialog, slugify, fmtScore, openModal } from "../utils.js?v=16";
+import { getAuthSnapshot, signInWithPassword, signOut } from "../auth.js?v=16";
+import { getCurrentEdition, setCurrentEdition } from "../state.js?v=16";
 import {
   listEditionsAccessible, createEdition, updateEdition,
   listProjects, getProjectFull, createProject, updateProject, deleteProject,
@@ -12,10 +12,11 @@ import {
   uploadProjectDocument, addProjectLink, deleteProjectDocument, resolveDocUrl,
   uploadTeamPhoto, deleteTeamPhoto, signedPhotoUrl, listTeamPhotos,
   listRanking,
-} from "../data.js?v=15";
-import { supabase } from "../supabase.js?v=15";
-import { parseFile } from "../parsers.js?v=15";
-import { navigate } from "../router.js?v=15";
+  adminListTeamEvaluations, adminReopenEvaluation,
+} from "../data.js?v=16";
+import { supabase } from "../supabase.js?v=16";
+import { parseFile } from "../parsers.js?v=16";
+import { navigate } from "../router.js?v=16";
 
 export async function renderAdmin({ section = "dashboard", projectId = null, teamId = null } = {}) {
   console.log("[admin] renderAdmin start", { section, projectId, teamId });
@@ -482,8 +483,8 @@ async function renderTeamAdmin(body, teamId) {
   ]));
 
   const tabs = el("div", { class: "tabs" });
-  ["info", "integrantes", "fotos"].forEach((k) => {
-    tabs.append(el("button", { class: "tabs__btn", "data-key": k, text: { info: "Información", integrantes: "Integrantes", fotos: "Fotos" }[k], onclick: () => act(k) }));
+  ["info", "integrantes", "fotos", "evaluaciones"].forEach((k) => {
+    tabs.append(el("button", { class: "tabs__btn", "data-key": k, text: { info: "Información", integrantes: "Integrantes", fotos: "Fotos", evaluaciones: "Evaluaciones" }[k], onclick: () => act(k) }));
   });
   body.append(tabs);
   const panel = el("div");
@@ -495,8 +496,53 @@ async function renderTeamAdmin(body, teamId) {
     if (k === "info") return mountTeamInfo(panel, team);
     if (k === "integrantes") return mountTeamMembers(panel, team, members);
     if (k === "fotos") return mountTeamPhotos(panel, team, photos);
+    if (k === "evaluaciones") return mountTeamEvaluations(panel, team);
   }
   act("info");
+}
+
+async function mountTeamEvaluations(root, team) {
+  root.append(el("p", { class: "text-muted", text: "Evaluaciones de este equipo. Puedes reabrir una evaluación enviada para que el jurado pueda corregirla; al reabrir deja de contar para el ranking hasta que el jurado la envíe de nuevo." }));
+  const list = el("div", { class: "flex-col gap-2 mt-3" });
+  root.append(list);
+  list.append(el("p", { class: "text-muted", text: "Cargando…" }));
+
+  async function refresh() {
+    let rows = [];
+    try { rows = await adminListTeamEvaluations(team.id); }
+    catch (e) {
+      clear(list);
+      list.append(el("div", { class: "error-banner", text: "No se pudieron cargar evaluaciones: " + (e?.message || "") }));
+      return;
+    }
+    clear(list);
+    if (!rows.length) {
+      list.append(el("div", { class: "empty", text: "Aún ningún jurado ha registrado evaluación de este equipo." }));
+      return;
+    }
+    rows.forEach((r) => {
+      const isSubmitted = r.status === "submitted";
+      const evalName = r.evaluator?.profile?.display_name || r.evaluator?.profile?.[0]?.display_name || "(sin nombre)";
+      const phaseLabel = r.phase === "sustentation" ? "Sustentación" : r.phase === "field_contest" ? "Concurso" : r.phase;
+      const card = el("div", { class: "card card--pad-sm flex items-center gap-3" }, [
+        el("div", { style: { flex: "1" } }, [
+          el("div", { class: "text-strong", text: evalName }),
+          el("div", { class: "text-muted", text: `${phaseLabel} · ${isSubmitted ? "Enviada" : "Borrador"} · Total: ${fmtScore(r.total_score ?? 0)}` }),
+        ]),
+        isSubmitted
+          ? el("button", { class: "btn btn--warning btn--sm", text: "Reabrir", onclick: async () => {
+              const ok = await confirmDialog("¿Reabrir la evaluación? El jurado podrá modificarla y dejará de contar en el ranking hasta que la envíe nuevamente.", { okLabel: "Reabrir" });
+              if (!ok) return;
+              try { await adminReopenEvaluation(r.id); toast("Evaluación reabierta", "success"); await refresh(); }
+              catch (e) { toast("No se pudo reabrir: " + (e?.message || ""), "error"); }
+            } })
+          : el("span", { class: "pill pill--warning", text: "Borrador" }),
+      ]);
+      list.append(card);
+    });
+  }
+
+  await refresh();
 }
 
 function mountTeamInfo(root, team) {
