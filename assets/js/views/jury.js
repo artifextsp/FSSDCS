@@ -1,11 +1,11 @@
-import { clear, el, fmtScore, toast } from "../utils.js?v=18";
-import { getAuthSnapshot, signInWithPassword, signOut } from "../auth.js?v=18";
+import { clear, el, fmtScore, toast } from "../utils.js?v=19";
+import { getAuthSnapshot, signInWithPassword, signOut } from "../auth.js?v=19";
 import {
   listMyAssignedProjects,
   listTeamsByProject,
   listMyEvaluationsForProjects,
-} from "../data.js?v=18";
-import { supabase } from "../supabase.js?v=18";
+} from "../data.js?v=19";
+import { supabase } from "../supabase.js?v=19";
 
 export async function renderJury() {
   const main = document.querySelector("[data-app-main]");

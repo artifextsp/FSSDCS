@@ -1,4 +1,4 @@
-import { supabase, getProfileFor, getSession, GET_SESSION_TIMEOUT, readCachedSession, fetchProfileDirect } from "./supabase.js?v=18";
+import { supabase, getProfileFor, getSession, GET_SESSION_TIMEOUT, readCachedSession, fetchProfileDirect } from "./supabase.js?v=19";
 
 const listeners = new Set();
 

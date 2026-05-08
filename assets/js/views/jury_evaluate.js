@@ -1,5 +1,5 @@
-import { clear, el, fmtScore, toast, confirmDialog } from "../utils.js?v=18";
-import { getAuthSnapshot } from "../auth.js?v=18";
+import { clear, el, fmtScore, toast, confirmDialog } from "../utils.js?v=19";
+import { getAuthSnapshot } from "../auth.js?v=19";
 import {
   getProject,
   listTeamsByProject,
@@ -15,10 +15,10 @@ import {
   signedPhotoUrl,
   listConfigs,
   listMyEvaluationsForProjects,
-} from "../data.js?v=18";
+} from "../data.js?v=19";
 
-import { navigate } from "../router.js?v=18";
-import { subscribeTable } from "../realtime.js?v=18";
+import { navigate } from "../router.js?v=19";
+import { subscribeTable } from "../realtime.js?v=19";
 
 /* ============ Pantalla 1: Lista de equipos del proyecto a evaluar ============ */
 export async function renderJuryEvaluate(projectId) {
@@ -486,6 +486,11 @@ function clampNum(v, min, max) {
   const n = Number(v); if (!Number.isFinite(n)) return null;
   return Math.min(Math.max(n, min), max);
 }
+function formatSize(bytes) {
+  if (!bytes) return "0 KB";
+  if (bytes < 1024 * 1024) return Math.round(bytes / 1024) + " KB";
+  return (bytes / 1024 / 1024).toFixed(1) + " MB";
+}
 
 /* ---------------- Photos block (por equipo) ---------------- */
 async function mountPhotosBlock(card, team, initialPhotos) {
@@ -520,19 +525,54 @@ async function mountPhotosBlock(card, team, initialPhotos) {
     }
   }
 
-  const fileInput = el("input", { type: "file", accept: "image/*", capture: "environment", style: { display: "none" } });
-  const uploadBtn = el("button", { class: "btn btn--primary mt-3", text: "📷 Tomar / subir foto", onclick: () => fileInput.click() });
-  fileInput.addEventListener("change", async () => {
-    const file = fileInput.files?.[0]; if (!file) return;
+  // Dos inputs separados: uno para abrir cámara directo y otro para galería.
+  // El primero usa capture=environment; el segundo no (deja escoger).
+  const fileInputCam = el("input", { type: "file", accept: "image/*", capture: "environment", style: { display: "none" } });
+  const fileInputLib = el("input", { type: "file", accept: "image/*", style: { display: "none" } });
+
+  const uploadBtn = el("button", { class: "btn btn--primary mt-3", text: "📷 Tomar foto", onclick: () => fileInputCam.click() });
+  const galleryBtn = el("button", { class: "btn btn--ghost mt-3", text: "🖼️ Subir desde galería", onclick: () => fileInputLib.click() });
+  const progressEl = el("div", { class: "text-muted mt-2", style: { display: "none", fontSize: "0.85rem" } });
+
+  async function handleFile(file) {
+    if (!file) return;
+    // Feedback inmediato: deshabilitamos los botones y mostramos progreso.
+    uploadBtn.disabled = true;
+    galleryBtn.disabled = true;
+    const originalText = uploadBtn.textContent;
+    uploadBtn.textContent = "Procesando foto…";
+    progressEl.style.display = "block";
+    progressEl.textContent = "Comprimiendo imagen para que cargue rápido…";
+    // Damos un microtick para que el navegador pinte el estado deshabilitado
+    // antes de empezar el trabajo pesado.
+    await new Promise((r) => requestAnimationFrame(() => r()));
     try {
+      progressEl.textContent = `Subiendo foto (${formatSize(file.size)} aprox.)…`;
       const ph = await uploadTeamPhoto({ teamId: team.id, file });
       photos.push(ph);
-      paint();
+      await paint();
       toast("Foto subida", "success");
-    } catch (e) { toast("No se pudo subir: " + (e.message || ""), "error"); }
-    finally { fileInput.value = ""; }
-  });
-  card.append(uploadBtn, fileInput);
+    } catch (e) {
+      console.error("[upload photo]", e);
+      toast("No se pudo subir: " + (e?.message || "Error desconocido"), "error", 6000);
+    } finally {
+      uploadBtn.disabled = false;
+      galleryBtn.disabled = false;
+      uploadBtn.textContent = originalText;
+      progressEl.style.display = "none";
+      progressEl.textContent = "";
+      fileInputCam.value = "";
+      fileInputLib.value = "";
+    }
+  }
+  fileInputCam.addEventListener("change", () => handleFile(fileInputCam.files?.[0]));
+  fileInputLib.addEventListener("change", () => handleFile(fileInputLib.files?.[0]));
+  card.append(
+    el("div", { class: "btn-row mt-3" }, [uploadBtn, galleryBtn]),
+    progressEl,
+    fileInputCam,
+    fileInputLib,
+  );
 
   await paint();
 

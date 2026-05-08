@@ -1,5 +1,5 @@
-import { supabase } from "./supabase.js?v=18";
-import { SUPABASE_URL, SUPABASE_KEY } from "./config.js?v=18";
+import { supabase } from "./supabase.js?v=19";
+import { SUPABASE_URL, SUPABASE_KEY } from "./config.js?v=19";
 
 /* ---------------- Editions ---------------- */
 export async function listEditionsAccessible() {
@@ -391,30 +391,43 @@ export async function uploadTeamPhoto({ teamId, file, caption }) {
   // Comprimimos+convertimos a JPEG en el cliente. Esto soluciona dos
   // problemas frecuentes desde móvil:
   //   1) iPhones envían fotos en HEIC y/o > 15MB (límite del bucket).
-  //   2) Re-subir la misma foto desde diferentes navegadores rompía mimes.
+  //   2) Tamaño grande -> upload eterno en redes flojas.
   // Si la compresión falla por algún formato exótico, intentamos con el
   // archivo original.
-  const { compressImageFile } = await import("./utils.js?v=18");
-  const compressed = await compressImageFile(file, { maxDim: 2000, quality: 0.85 });
+  const { compressImageFile } = await import("./utils.js?v=19");
+  // Hard timeout en compresión: si createImageBitmap se cuelga (algunos
+  // iOS Safari con HEIC), no dejamos al usuario esperando para siempre.
+  const compressed = await Promise.race([
+    compressImageFile(file, { maxDim: 1600, quality: 0.82 }),
+    new Promise((res) => setTimeout(() => res(file), 20000)),
+  ]);
 
-  const usableMimes = ["image/jpeg", "image/png", "image/webp"];
-  const finalFile = usableMimes.includes(compressed.type) ? compressed : compressed;
-  const ext = finalFile.type === "image/png" ? "png" : finalFile.type === "image/webp" ? "webp" : "jpg";
+  const ext = compressed.type === "image/png" ? "png" : compressed.type === "image/webp" ? "webp" : "jpg";
   const path = `${teamId}/${Date.now()}-${Math.random().toString(36).slice(2, 8)}.${ext}`;
 
-  const { error: up } = await supabase.storage
+  // Hard timeout de upload: 60s. Por encima de eso la red está rota.
+  const uploadOp = supabase.storage
     .from("project-photos")
-    .upload(path, finalFile, { contentType: finalFile.type || "image/jpeg", upsert: false });
+    .upload(path, compressed, { contentType: compressed.type || "image/jpeg", upsert: false });
+  const timeoutOp = new Promise((_, rej) =>
+    setTimeout(() => rej(new Error("La carga tardó demasiado. Verifica tu conexión e intenta nuevamente.")), 60000),
+  );
+  const result = await Promise.race([uploadOp, timeoutOp]);
+  const up = result?.error;
   if (up) {
     const msg = up.message || "";
     if (/mime type/i.test(msg) || /not allowed/i.test(msg)) {
-      throw new Error("Formato de imagen no admitido en este teléfono. Intenta con otra foto en JPG/PNG.");
+      throw new Error("Formato de imagen no admitido. Intenta con otra foto en JPG.");
     }
     if (/too large|payload/i.test(msg)) {
-      throw new Error("La foto es muy grande incluso después de comprimirla. Intenta con otra.");
+      throw new Error("La foto es muy grande aún comprimida. Toma una nueva con menor calidad.");
+    }
+    if (/row-level security|rls|policy/i.test(msg)) {
+      throw new Error("Tu cuenta no tiene permiso para subir fotos a este equipo. Pide al admin que verifique tu asignación.");
     }
     throw up;
   }
+
   const { data: { user } = {} } = await supabase.auth.getUser();
   const { data, error } = await supabase
     .from("team_photos")

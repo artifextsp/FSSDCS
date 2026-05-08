@@ -1,7 +1,7 @@
-import { clear, el, fmtScore } from "../utils.js?v=18";
-import { getCurrentEdition } from "../state.js?v=18";
-import { listRanking } from "../data.js?v=18";
-import { subscribeTable } from "../realtime.js?v=18";
+import { clear, el, fmtScore } from "../utils.js?v=19";
+import { getCurrentEdition } from "../state.js?v=19";
+import { listRanking } from "../data.js?v=19";
+import { subscribeTable } from "../realtime.js?v=19";
 
 export async function renderRanking() {
   const main = document.querySelector("[data-app-main]");

@@ -77,46 +77,65 @@ export function uid() {
  * archivo original. La capa de upload se encargará de mostrar un error
  * legible si tampoco se puede subir directo.
  */
-export async function compressImageFile(file, { maxDim = 2000, quality = 0.85 } = {}) {
+export async function compressImageFile(file, { maxDim = 1600, quality = 0.82, decodeTimeoutMs = 12000 } = {}) {
   if (!file || !file.type?.startsWith("image/")) return file;
-  // Si ya es pequeño Y es un mime aceptado por el bucket, no recodificamos.
+  // Si ya es chico y es un mime aceptado por el bucket, no recodificamos.
   const okMime = ["image/jpeg", "image/png", "image/webp"].includes(file.type);
-  if (okMime && file.size <= 1.5 * 1024 * 1024) return file;
+  if (okMime && file.size <= 1.2 * 1024 * 1024) return file;
+
+  // Decodificación con timeout. createImageBitmap es lo más rápido y soporta
+  // HEIC en iOS Safari moderno; cae al <img> si no está disponible.
+  const decodePromise = (async () => {
+    if (typeof createImageBitmap === "function") {
+      try { return await createImageBitmap(file); } catch (_) {}
+    }
+    return await new Promise((resolve, reject) => {
+      const url = URL.createObjectURL(file);
+      const img = new Image();
+      img.onload = () => { URL.revokeObjectURL(url); resolve(img); };
+      img.onerror = (e) => { URL.revokeObjectURL(url); reject(e); };
+      img.src = url;
+    });
+  })();
 
   let bitmap;
   try {
-    if (typeof createImageBitmap === "function") {
-      bitmap = await createImageBitmap(file);
-    } else {
-      bitmap = await new Promise((resolve, reject) => {
-        const img = new Image();
-        img.onload = () => resolve(img);
-        img.onerror = reject;
-        img.src = URL.createObjectURL(file);
-      });
-    }
+    bitmap = await Promise.race([
+      decodePromise,
+      new Promise((_, rej) => setTimeout(() => rej(new Error("decode timeout")), decodeTimeoutMs)),
+    ]);
   } catch (e) {
     console.warn("[compressImageFile] decode failed, sending original", e);
     return file;
   }
 
-  const w0 = bitmap.width, h0 = bitmap.height;
+  const w0 = bitmap.width || bitmap.naturalWidth;
+  const h0 = bitmap.height || bitmap.naturalHeight;
+  if (!w0 || !h0) {
+    if (typeof bitmap.close === "function") bitmap.close();
+    return file;
+  }
   let w = w0, h = h0;
   if (w > maxDim || h > maxDim) {
     if (w >= h) { h = Math.round(h * (maxDim / w)); w = maxDim; }
     else { w = Math.round(w * (maxDim / h)); h = maxDim; }
   }
 
-  const canvas = document.createElement("canvas");
-  canvas.width = w; canvas.height = h;
-  const ctx = canvas.getContext("2d");
-  ctx.drawImage(bitmap, 0, 0, w, h);
-  if (typeof bitmap.close === "function") bitmap.close();
+  try {
+    const canvas = document.createElement("canvas");
+    canvas.width = w; canvas.height = h;
+    const ctx = canvas.getContext("2d");
+    ctx.drawImage(bitmap, 0, 0, w, h);
+    if (typeof bitmap.close === "function") bitmap.close();
 
-  const blob = await new Promise((resolve) => canvas.toBlob(resolve, "image/jpeg", quality));
-  if (!blob) return file;
-  const baseName = (file.name || "foto").replace(/\.[^.]+$/, "");
-  return new File([blob], `${baseName}.jpg`, { type: "image/jpeg", lastModified: Date.now() });
+    const blob = await new Promise((resolve) => canvas.toBlob(resolve, "image/jpeg", quality));
+    if (!blob) return file;
+    const baseName = (file.name || "foto").replace(/\.[^.]+$/, "");
+    return new File([blob], `${baseName}.jpg`, { type: "image/jpeg", lastModified: Date.now() });
+  } catch (e) {
+    console.warn("[compressImageFile] canvas/encode failed, sending original", e);
+    return file;
+  }
 }
 
 /* ---------- Toasts ---------- */
