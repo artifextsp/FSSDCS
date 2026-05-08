@@ -661,19 +661,122 @@ function configEditor(project, phase, current) {
         ["process_phases_interview", "Fases + Entrevista"],
       ]
     : [["field_rounds", "Rondas de concurso"]];
+
+  // Estado de la última versión confirmada en servidor (para revertir y para
+  // detectar "cambios sin guardar").
+  const saved = {
+    method_type: current?.method_type || methodOptions[0][0],
+    scale_min: current?.scale_min ?? 0,
+    scale_max: current?.scale_max ?? 5,
+    config: current?.config || templateForMethod(current?.method_type || methodOptions[0][0]),
+  };
+
   const methodEl = el("select", { class: "select" });
-  methodOptions.forEach(([v, l]) => methodEl.append(el("option", { value: v, text: l, selected: current?.method_type === v })));
-  const minEl = el("input", { class: "input", type: "number", value: current?.scale_min ?? 0 });
-  const maxEl = el("input", { class: "input", type: "number", value: current?.scale_max ?? 5 });
+  methodOptions.forEach(([v, l]) => methodEl.append(
+    el("option", { value: v, text: l, selected: saved.method_type === v }),
+  ));
+  const minEl = el("input", { class: "input", type: "number", value: saved.scale_min });
+  const maxEl = el("input", { class: "input", type: "number", value: saved.scale_max });
   const jsonEl = el("textarea", {
     class: "textarea",
     style: { fontFamily: "var(--font-mono)", minHeight: "180px" },
-    value: JSON.stringify(current?.config || templateForMethod(current?.method_type || methodEl.value), null, 2),
+    value: JSON.stringify(saved.config, null, 2),
   });
-  methodEl.addEventListener("change", () => {
-    if (!confirm("¿Reemplazar la configuración con la plantilla del nuevo método?")) return;
-    jsonEl.value = JSON.stringify(templateForMethod(methodEl.value), null, 2);
+  const statusEl = el("span", {
+    class: "text-muted",
+    style: { fontSize: "0.85rem" },
+    text: "Sin cambios pendientes",
   });
+
+  // ----- helpers -----
+  function setStatus(text, kind) {
+    statusEl.textContent = text;
+    statusEl.style.color = kind === "dirty"
+      ? "var(--color-warning)"
+      : kind === "error"
+        ? "var(--color-danger)"
+        : kind === "ok"
+          ? "var(--color-success)"
+          : "var(--color-text-muted)";
+  }
+  function isDirty() {
+    if (methodEl.value !== saved.method_type) return true;
+    if (Number(minEl.value) !== Number(saved.scale_min)) return true;
+    if (Number(maxEl.value) !== Number(saved.scale_max)) return true;
+    let parsed;
+    try { parsed = JSON.parse(jsonEl.value); } catch { return true; }
+    return JSON.stringify(parsed) !== JSON.stringify(saved.config);
+  }
+  function refreshDirty() {
+    setStatus(isDirty() ? "Cambios sin guardar" : "Sin cambios pendientes", isDirty() ? "dirty" : "");
+  }
+  async function persist({ silent } = {}) {
+    let cfg;
+    try { cfg = JSON.parse(jsonEl.value); }
+    catch (e) {
+      if (!silent) toast("JSON inválido: " + e.message, "error");
+      setStatus("JSON inválido", "error");
+      return false;
+    }
+    saveBtn.disabled = true;
+    const labelOriginal = saveBtn.textContent;
+    saveBtn.textContent = "Guardando…";
+    setStatus("Guardando…", "");
+    try {
+      await upsertActiveConfig({
+        projectId: project.id,
+        phase,
+        methodType: methodEl.value,
+        scaleMin: Number(minEl.value),
+        scaleMax: Number(maxEl.value),
+        config: cfg,
+      });
+      saved.method_type = methodEl.value;
+      saved.scale_min = Number(minEl.value);
+      saved.scale_max = Number(maxEl.value);
+      saved.config = cfg;
+      setStatus("Guardado ✓", "ok");
+      if (!silent) toast("Configuración guardada", "success");
+      return true;
+    } catch (e) {
+      setStatus("Error al guardar", "error");
+      toast("Error: " + (e?.message || ""), "error");
+      return false;
+    } finally {
+      saveBtn.disabled = false;
+      saveBtn.textContent = labelOriginal;
+    }
+  }
+
+  // ----- listeners -----
+  // Cambio de metodología: confirmamos reemplazo de plantilla y AUTO-GUARDAMOS
+  // para que el usuario no se quede con un cambio sin persistir. Si cancela,
+  // revertimos el dropdown al valor saved.
+  methodEl.addEventListener("change", async () => {
+    const newMethod = methodEl.value;
+    if (newMethod === saved.method_type) {
+      jsonEl.value = JSON.stringify(saved.config, null, 2);
+      refreshDirty();
+      return;
+    }
+    const ok = confirm(
+      "¿Cambiar la metodología y guardar la plantilla por defecto del nuevo método? " +
+      "(Se reemplazará el JSON actual con la plantilla.)",
+    );
+    if (!ok) {
+      methodEl.value = saved.method_type;
+      return;
+    }
+    jsonEl.value = JSON.stringify(templateForMethod(newMethod), null, 2);
+    await persist();
+  });
+  minEl.addEventListener("input", refreshDirty);
+  maxEl.addEventListener("input", refreshDirty);
+  jsonEl.addEventListener("input", refreshDirty);
+
+  const saveBtn = el("button", { class: "btn btn--primary", text: "Guardar configuración" });
+  saveBtn.addEventListener("click", () => persist());
+
   card.append(
     el("div", { class: "field-row field-row--3" }, [
       el("div", { class: "field" }, [el("label", { class: "field__label", text: "Metodología" }), methodEl]),
@@ -685,37 +788,17 @@ function configEditor(project, phase, current) {
       el("p", { class: "field__hint", text: "Edita preguntas, fases o rondas. Cada equipo se evalúa con esta misma configuración." }),
       jsonEl,
     ]),
-    el("div", { class: "btn-row" }, [
-      (() => {
-        const btn = el("button", { class: "btn btn--primary", text: "Guardar configuración" });
-        btn.addEventListener("click", async () => {
-          if (btn.disabled) return;
-          let cfg;
-          try { cfg = JSON.parse(jsonEl.value); }
-          catch (e) { return toast("JSON inválido: " + e.message, "error"); }
-          btn.disabled = true;
-          const original = btn.textContent;
-          btn.textContent = "Guardando…";
-          try {
-            await upsertActiveConfig({
-              projectId: project.id, phase,
-              methodType: methodEl.value,
-              scaleMin: Number(minEl.value), scaleMax: Number(maxEl.value),
-              config: cfg,
-            });
-            toast("Configuración guardada", "success");
-          } catch (e) {
-            toast("Error: " + (e?.message || ""), "error");
-          } finally {
-            btn.disabled = false;
-            btn.textContent = original;
-          }
-        });
-        return btn;
-      })(),
-      el("button", { class: "btn btn--ghost", text: "Restaurar plantilla", onclick: () => {
-        jsonEl.value = JSON.stringify(templateForMethod(methodEl.value), null, 2);
-      } }),
+    el("div", { class: "btn-row items-center", style: { flexWrap: "wrap", gap: "var(--space-3)" } }, [
+      saveBtn,
+      el("button", {
+        class: "btn btn--ghost",
+        text: "Restaurar plantilla",
+        onclick: () => {
+          jsonEl.value = JSON.stringify(templateForMethod(methodEl.value), null, 2);
+          refreshDirty();
+        },
+      }),
+      statusEl,
     ]),
   );
   return card;
