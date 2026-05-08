@@ -17,13 +17,17 @@ export async function renderRanking() {
     ]),
     el("span", { class: "pill pill--accent", text: "Tiempo real" }),
   ]));
-  wrap.append(el("p", { class: "text-muted", text: "Ranking de equipos. Cada equipo compite individualmente; haz clic para ver su perfil y fotos." }));
+  wrap.append(el("p", {
+    class: "text-muted",
+    text: "Cada proyecto tiene su propio ranking. Haz clic en un equipo para ver su perfil y fotos.",
+  }));
 
-  const list = el("div", { class: "flex-col gap-3 mt-3" });
+  const list = el("div", { class: "flex-col gap-5 mt-3" });
   wrap.append(list);
 
   if (!edition) {
-    list.append(el("div", { class: "empty", text: "No hay edición activa." })); return;
+    list.append(el("div", { class: "empty", text: "No hay edición activa." }));
+    return;
   }
 
   let unsub = null;
@@ -41,10 +45,51 @@ export async function renderRanking() {
     try { paint(await listRanking(edition.id)); }
     catch { paint([]); }
   }
+
   function paint(rows) {
     clear(list);
-    if (!rows.length) { list.append(el("div", { class: "empty", text: "Aún no hay puntajes registrados." })); return; }
-    rows.forEach((r) => list.append(rankRow(r)));
+    if (!rows.length) {
+      list.append(el("div", { class: "empty", text: "Aún no hay puntajes registrados." }));
+      return;
+    }
+
+    // Agrupar por proyecto conservando el orden de project_rank dentro de cada uno.
+    const projectOrder = [];
+    const byProject = {};
+    rows.forEach((r) => {
+      if (!byProject[r.project_id]) {
+        projectOrder.push(r.project_id);
+        byProject[r.project_id] = { name: r.project_name, teams: [] };
+      }
+      byProject[r.project_id].teams.push(r);
+    });
+
+    // Ordenar cada grupo por project_rank.
+    projectOrder.forEach((pid) => {
+      byProject[pid].teams.sort((a, b) => a.project_rank - b.project_rank);
+    });
+
+    // Ordenar grupos por nombre de proyecto.
+    projectOrder.sort((a, b) =>
+      byProject[a].name.localeCompare(byProject[b].name, "es", { sensitivity: "base" }),
+    );
+
+    projectOrder.forEach((pid) => {
+      const { name, teams } = byProject[pid];
+      const section = el("div", { class: "ranking-project" });
+
+      section.append(
+        el("div", { class: "ranking-project__header" }, [
+          el("h2", { class: "ranking-project__title", text: name }),
+          el("span", { class: "pill pill--ghost", text: `${teams.length} equipo${teams.length !== 1 ? "s" : ""}` }),
+        ]),
+      );
+
+      const teamList = el("div", { class: "flex-col gap-2" });
+      teams.forEach((r) => teamList.append(rankRow(r)));
+      section.append(teamList);
+      list.append(section);
+    });
   }
 }
 
@@ -54,10 +99,16 @@ function rankRow(r) {
     href: `#/equipos/${r.team_id}`,
     style: { textDecoration: "none", color: "inherit" },
   }, [
-    el("div", { class: `rank-row__pos rank-row__pos--${r.edition_rank <= 3 ? r.edition_rank : ""}`, text: `${r.edition_rank}` }),
+    el("div", {
+      class: `rank-row__pos rank-row__pos--${r.project_rank <= 3 ? r.project_rank : ""}`,
+      text: `${r.project_rank}`,
+    }),
     el("div", {}, [
       el("div", { class: "rank-row__title", text: r.team_name }),
-      el("div", { class: "rank-row__meta", text: `${r.project_name} · Sustentación ${fmtScore(r.sustentation_avg)} · Concurso ${fmtScore(r.field_contest_avg)}` }),
+      el("div", {
+        class: "rank-row__meta",
+        text: `Sustentación ${fmtScore(r.sustentation_avg)} · Concurso ${fmtScore(r.field_contest_avg)}`,
+      }),
     ]),
     el("div", { class: "rank-row__score" }, [
       `${fmtScore(r.total_score)}`,
