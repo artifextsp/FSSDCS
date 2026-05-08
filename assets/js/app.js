@@ -96,22 +96,28 @@ function paintAuth({ session, profile }) {
   if (!authSlot) return;
   clear(authSlot);
   if (!session) {
+    // Solo botón "Iniciar sesión", arriba a la izquierda junto al brand.
     authSlot.append(
-      el("button", { class: "btn btn--primary btn--sm", text: "Iniciar sesión", onclick: openLoginModal }),
+      el("button", {
+        class: "btn btn--primary btn--sm",
+        type: "button",
+        text: "Iniciar sesión",
+        onclick: openLoginModal,
+      }),
     );
-  } else {
-    const name = profile?.display_name || session.user.email;
-    const role = profile?.role;
-    const roleLink = role === "admin"
-      ? el("a", { class: "pill pill--primary nav-role-link", href: "#/admin", text: "Admin" })
-      : role === "evaluator"
-        ? el("a", { class: "pill pill--accent nav-role-link", href: "#/jurado", text: "Jurado" })
-        : null;
-    const nameEl = el("span", { class: "nav-user-name", text: name });
-    const signOutBtn = el("button", { class: "btn btn--ghost btn--sm", text: "Salir", onclick: async () => { await signOut(); navigate("/"); } });
-    if (roleLink) authSlot.append(roleLink);
-    authSlot.append(nameEl, signOutBtn);
+    return;
   }
+  // Estado logueado: solo el botón Salir. El admin/jurado entra a su panel
+  // por el redirect del login; si necesita volver, usa marcadores o
+  // re-loguea (la sesión persiste, así que el redirect es instantáneo).
+  authSlot.append(
+    el("button", {
+      class: "btn btn--ghost btn--sm",
+      type: "button",
+      text: "Salir",
+      onclick: async () => { await signOut(); navigate("/"); },
+    }),
+  );
 }
 onAuthChange(paintAuth);
 

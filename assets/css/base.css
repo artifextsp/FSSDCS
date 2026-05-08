@@ -109,32 +109,32 @@ p { margin: 0 0 var(--space-3); }
   display: flex;
   align-items: center;
   justify-content: space-between;
-  gap: var(--space-3);
+  gap: var(--space-4);
   padding: var(--space-4) 0;
 }
 
-/* Auth slot siempre visible, fuera del nav colapsable */
-.nav-auth-fixed {
+/* Grupos izquierda/derecha del header */
+.header-left {
+  display: flex;
+  align-items: center;
+  gap: var(--space-4);
+  flex: 0 1 auto;
+  min-width: 0;
+}
+.header-right {
+  display: flex;
+  align-items: center;
+  gap: var(--space-3);
+  flex: 0 0 auto;
+}
+
+/* Slot de autenticación: siempre visible, junto al brand (top-left) */
+.header-auth {
   display: inline-flex;
   align-items: center;
   gap: var(--space-2);
-  margin-left: auto;
   flex-shrink: 0;
 }
-.nav-user-name {
-  color: var(--color-text-muted);
-  font-size: 0.82rem;
-  max-width: 120px;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
-.nav-role-link {
-  text-decoration: none;
-  font-size: 0.8rem;
-  padding: 3px 10px;
-}
-.nav-role-link:hover { text-decoration: none; opacity: 0.85; }
 
 .brand {
   display: inline-flex;
@@ -187,16 +187,25 @@ p { margin: 0 0 var(--space-3); }
   color: var(--color-text);
   font-weight: 600;
   font-size: 0.92rem;
-  padding: var(--space-2) var(--space-3);
+  padding: 0.55rem 0.9rem;
   border-radius: var(--radius-md);
-  transition: color var(--duration-2), background var(--duration-2);
-  opacity: 0.75;
+  cursor: pointer;
+  transition: color var(--duration-2), background var(--duration-2), transform var(--duration-2);
+  position: relative;
 }
-.primary-nav a:hover { opacity: 1; color: var(--color-primary); background: var(--color-surface); text-decoration: none; }
+.primary-nav a:hover {
+  color: var(--color-primary);
+  background: var(--color-primary-soft);
+  text-decoration: none;
+  transform: translateY(-1px);
+}
+.primary-nav a:focus-visible {
+  outline: 2px solid var(--color-primary);
+  outline-offset: 2px;
+}
 .primary-nav a.is-active {
   color: var(--color-primary);
-  opacity: 1;
-  background: var(--color-surface);
+  background: var(--color-primary-soft);
 }
 /* legacy — auth slot movido a .nav-auth-fixed */
 .primary-nav__user { display: none; }

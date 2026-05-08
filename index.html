@@ -20,26 +20,30 @@
 
     <header class="app-header" data-app-header>
       <div class="container app-header__inner">
-        <a href="#/" class="brand" aria-label="Inicio Feria STEAM">
-          <span class="brand__mark" aria-hidden="true">FS</span>
-          <span class="brand__text">
-            <span class="brand__title">Feria STEAM</span>
-            <span class="brand__subtitle">Seminario Diocesano Cristo Sacerdote</span>
-          </span>
-        </a>
-        <span class="nav-auth-fixed" data-auth-slot></span>
-        <button class="nav-toggle" aria-expanded="false" aria-controls="primary-nav" data-nav-toggle>
-          <span class="nav-toggle__bar"></span>
-          <span class="nav-toggle__bar"></span>
-          <span class="nav-toggle__bar"></span>
-          <span class="visually-hidden">Abrir menú</span>
-        </button>
-        <nav id="primary-nav" class="primary-nav" data-primary-nav>
-          <a href="#/" data-route="/">Inicio</a>
-          <a href="#/proyectos" data-route="/proyectos">Proyectos</a>
-          <a href="#/ranking" data-route="/ranking">Ranking</a>
-          <a href="#/equipo" data-route="/equipo">Mi equipo</a>
-        </nav>
+        <div class="header-left">
+          <a href="#/" class="brand" aria-label="Inicio Feria STEAM">
+            <span class="brand__mark" aria-hidden="true">FS</span>
+            <span class="brand__text">
+              <span class="brand__title">Feria STEAM</span>
+              <span class="brand__subtitle">Seminario Diocesano Cristo Sacerdote</span>
+            </span>
+          </a>
+          <span class="header-auth" data-auth-slot></span>
+        </div>
+        <div class="header-right">
+          <button class="nav-toggle" aria-expanded="false" aria-controls="primary-nav" data-nav-toggle>
+            <span class="nav-toggle__bar"></span>
+            <span class="nav-toggle__bar"></span>
+            <span class="nav-toggle__bar"></span>
+            <span class="visually-hidden">Abrir menú</span>
+          </button>
+          <nav id="primary-nav" class="primary-nav" data-primary-nav>
+            <a href="#/" data-route="/">Inicio</a>
+            <a href="#/proyectos" data-route="/proyectos">Proyectos</a>
+            <a href="#/ranking" data-route="/ranking">Ranking</a>
+            <a href="#/equipo" data-route="/equipo">Mi equipo</a>
+          </nav>
+        </div>
       </div>
     </header>
 
