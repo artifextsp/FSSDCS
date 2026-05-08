@@ -1,6 +1,6 @@
-import { clear, el, fmtScore, toast } from "../utils.js?v=17";
-import { listEditionsAccessible, teamPortalLookup, searchTeamsByName, signedPhotoUrl, resolveDocUrl } from "../data.js?v=17";
-import { getCurrentEdition, setCurrentEdition } from "../state.js?v=17";
+import { clear, el, fmtScore, toast } from "../utils.js?v=18";
+import { listEditionsAccessible, teamPortalLookup, searchTeamsByName, signedPhotoUrl, resolveDocUrl } from "../data.js?v=18";
+import { getCurrentEdition, setCurrentEdition } from "../state.js?v=18";
 
 export async function renderTeam() {
   const main = document.querySelector("[data-app-main]");

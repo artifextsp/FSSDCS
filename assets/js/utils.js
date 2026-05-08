@@ -65,6 +65,60 @@ export function uid() {
   return Math.random().toString(36).slice(2, 9) + Date.now().toString(36).slice(-3);
 }
 
+/* ---------- Image compression ----------
+ * Usado para subir fotos desde el celular sin que excedan los 15MB del bucket
+ * y para convertir HEIC/HEIF/AVIF a JPEG (formatos no aceptados). El proceso:
+ *   1. createImageBitmap() decodifica casi cualquier formato soportado por
+ *      el navegador (incluido HEIC en iOS Safari moderno).
+ *   2. Reescalamos al lado mayor <= maxDim manteniendo proporción.
+ *   3. Re-codificamos como JPEG (calidad 0.85) en un canvas y devolvemos un
+ *      File con extensión .jpg y MIME image/jpeg.
+ * Si algo falla (formato no decodificable en este navegador) devolvemos el
+ * archivo original. La capa de upload se encargará de mostrar un error
+ * legible si tampoco se puede subir directo.
+ */
+export async function compressImageFile(file, { maxDim = 2000, quality = 0.85 } = {}) {
+  if (!file || !file.type?.startsWith("image/")) return file;
+  // Si ya es pequeño Y es un mime aceptado por el bucket, no recodificamos.
+  const okMime = ["image/jpeg", "image/png", "image/webp"].includes(file.type);
+  if (okMime && file.size <= 1.5 * 1024 * 1024) return file;
+
+  let bitmap;
+  try {
+    if (typeof createImageBitmap === "function") {
+      bitmap = await createImageBitmap(file);
+    } else {
+      bitmap = await new Promise((resolve, reject) => {
+        const img = new Image();
+        img.onload = () => resolve(img);
+        img.onerror = reject;
+        img.src = URL.createObjectURL(file);
+      });
+    }
+  } catch (e) {
+    console.warn("[compressImageFile] decode failed, sending original", e);
+    return file;
+  }
+
+  const w0 = bitmap.width, h0 = bitmap.height;
+  let w = w0, h = h0;
+  if (w > maxDim || h > maxDim) {
+    if (w >= h) { h = Math.round(h * (maxDim / w)); w = maxDim; }
+    else { w = Math.round(w * (maxDim / h)); h = maxDim; }
+  }
+
+  const canvas = document.createElement("canvas");
+  canvas.width = w; canvas.height = h;
+  const ctx = canvas.getContext("2d");
+  ctx.drawImage(bitmap, 0, 0, w, h);
+  if (typeof bitmap.close === "function") bitmap.close();
+
+  const blob = await new Promise((resolve) => canvas.toBlob(resolve, "image/jpeg", quality));
+  if (!blob) return file;
+  const baseName = (file.name || "foto").replace(/\.[^.]+$/, "");
+  return new File([blob], `${baseName}.jpg`, { type: "image/jpeg", lastModified: Date.now() });
+}
+
 /* ---------- Toasts ---------- */
 const stack = () => document.querySelector("[data-toast-stack]");
 export function toast(message, kind = "info", timeout = 3500) {

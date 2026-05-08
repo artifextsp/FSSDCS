@@ -1,5 +1,5 @@
-import { supabase } from "./supabase.js?v=17";
-import { SUPABASE_URL, SUPABASE_KEY } from "./config.js?v=17";
+import { supabase } from "./supabase.js?v=18";
+import { SUPABASE_URL, SUPABASE_KEY } from "./config.js?v=18";
 
 /* ---------------- Editions ---------------- */
 export async function listEditionsAccessible() {
@@ -388,13 +388,33 @@ export async function adminListTeamEvaluations(teamId) {
 
 /* ---------------- Photos (por equipo) ---------------- */
 export async function uploadTeamPhoto({ teamId, file, caption }) {
-  const ext = (file.name.split(".").pop() || "jpg").toLowerCase();
-  const safeExt = ["jpg", "jpeg", "png", "webp"].includes(ext) ? ext : "jpg";
-  const path = `${teamId}/${Date.now()}-${Math.random().toString(36).slice(2, 8)}.${safeExt}`;
+  // Comprimimos+convertimos a JPEG en el cliente. Esto soluciona dos
+  // problemas frecuentes desde móvil:
+  //   1) iPhones envían fotos en HEIC y/o > 15MB (límite del bucket).
+  //   2) Re-subir la misma foto desde diferentes navegadores rompía mimes.
+  // Si la compresión falla por algún formato exótico, intentamos con el
+  // archivo original.
+  const { compressImageFile } = await import("./utils.js?v=18");
+  const compressed = await compressImageFile(file, { maxDim: 2000, quality: 0.85 });
+
+  const usableMimes = ["image/jpeg", "image/png", "image/webp"];
+  const finalFile = usableMimes.includes(compressed.type) ? compressed : compressed;
+  const ext = finalFile.type === "image/png" ? "png" : finalFile.type === "image/webp" ? "webp" : "jpg";
+  const path = `${teamId}/${Date.now()}-${Math.random().toString(36).slice(2, 8)}.${ext}`;
+
   const { error: up } = await supabase.storage
     .from("project-photos")
-    .upload(path, file, { contentType: file.type || "image/jpeg", upsert: false });
-  if (up) throw up;
+    .upload(path, finalFile, { contentType: finalFile.type || "image/jpeg", upsert: false });
+  if (up) {
+    const msg = up.message || "";
+    if (/mime type/i.test(msg) || /not allowed/i.test(msg)) {
+      throw new Error("Formato de imagen no admitido en este teléfono. Intenta con otra foto en JPG/PNG.");
+    }
+    if (/too large|payload/i.test(msg)) {
+      throw new Error("La foto es muy grande incluso después de comprimirla. Intenta con otra.");
+    }
+    throw up;
+  }
   const { data: { user } = {} } = await supabase.auth.getUser();
   const { data, error } = await supabase
     .from("team_photos")

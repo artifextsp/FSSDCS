@@ -1,6 +1,6 @@
-import { clear, el, fmtScore } from "../utils.js?v=17";
-import { getProjectFull, listProjectRanking, resolveDocUrl, signedPhotoUrl } from "../data.js?v=17";
-import { subscribeTable } from "../realtime.js?v=17";
+import { clear, el, fmtScore } from "../utils.js?v=18";
+import { getProjectFull, listProjectRanking, resolveDocUrl, signedPhotoUrl } from "../data.js?v=18";
+import { subscribeTable } from "../realtime.js?v=18";
 
 export async function renderProject(id) {
   const main = document.querySelector("[data-app-main]");

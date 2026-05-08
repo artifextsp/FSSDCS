@@ -1,21 +1,21 @@
-import { defineRoute, startRouter, navigate, refreshCurrent } from "./router.js?v=17";
-import { onAuthChange, refreshAuth, signOut } from "./auth.js?v=17";
-import { loadInitialEdition, onEditionChange } from "./state.js?v=17";
-import { $, $$, el, clear } from "./utils.js?v=17";
-import { supabase } from "./supabase.js?v=17";
+import { defineRoute, startRouter, navigate, refreshCurrent } from "./router.js?v=18";
+import { onAuthChange, refreshAuth, signOut } from "./auth.js?v=18";
+import { loadInitialEdition, onEditionChange } from "./state.js?v=18";
+import { $, $$, el, clear } from "./utils.js?v=18";
+import { supabase } from "./supabase.js?v=18";
 
 console.log("[boot] app.js evaluado");
 
-import { renderLanding } from "./views/landing.js?v=17";
-import { renderProjects } from "./views/public_projects.js?v=17";
-import { renderProject } from "./views/public_project.js?v=17";
-import { renderRanking } from "./views/public_ranking.js?v=17";
-import { renderTeam } from "./views/team.js?v=17";
-import { renderJury } from "./views/jury.js?v=17";
-import { renderJuryEvaluate } from "./views/jury_evaluate.js?v=17";
-import { renderJuryTeamEvaluate } from "./views/jury_evaluate.js?v=17";
-import { renderPublicTeam } from "./views/public_team.js?v=17";
-import { renderAdmin } from "./views/admin.js?v=17";
+import { renderLanding } from "./views/landing.js?v=18";
+import { renderProjects } from "./views/public_projects.js?v=18";
+import { renderProject } from "./views/public_project.js?v=18";
+import { renderRanking } from "./views/public_ranking.js?v=18";
+import { renderTeam } from "./views/team.js?v=18";
+import { renderJury } from "./views/jury.js?v=18";
+import { renderJuryEvaluate } from "./views/jury_evaluate.js?v=18";
+import { renderJuryTeamEvaluate } from "./views/jury_evaluate.js?v=18";
+import { renderPublicTeam } from "./views/public_team.js?v=18";
+import { renderAdmin } from "./views/admin.js?v=18";
 
 /* ---- Header interactions ---- */
 const navToggle = $("[data-nav-toggle]");
@@ -51,7 +51,7 @@ function openLoginModal() {
       btn.disabled = true;
       btn.textContent = "Ingresando…";
       try {
-        const auth = await import("./auth.js?v=17");
+        const auth = await import("./auth.js?v=18");
         // Hard timeout: si el sign-in se cuelga (típico en mobile con red
         // intermitente o por bloqueo de Web Locks) cortamos a los 12s para
         // que el usuario no quede mirando "Ingresando…" indefinidamente.
