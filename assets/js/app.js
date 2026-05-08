@@ -101,18 +101,17 @@ function paintAuth({ session, profile }) {
     );
   } else {
     const name = profile?.display_name || session.user.email;
-    const role = profile?.role || "—";
-    authSlot.append(
-      el("span", { class: "pill pill--primary", text: role }),
-      el("span", { class: "text-muted", style: { fontSize: "0.85rem" }, text: name }),
-      el("button", { class: "btn btn--ghost btn--sm", text: "Salir", onclick: async () => { await signOut(); navigate("/"); } }),
-    );
+    const role = profile?.role;
+    const roleLink = role === "admin"
+      ? el("a", { class: "pill pill--primary nav-role-link", href: "#/admin", text: "Admin" })
+      : role === "evaluator"
+        ? el("a", { class: "pill pill--accent nav-role-link", href: "#/jurado", text: "Jurado" })
+        : null;
+    const nameEl = el("span", { class: "nav-user-name", text: name });
+    const signOutBtn = el("button", { class: "btn btn--ghost btn--sm", text: "Salir", onclick: async () => { await signOut(); navigate("/"); } });
+    if (roleLink) authSlot.append(roleLink);
+    authSlot.append(nameEl, signOutBtn);
   }
-  // Show/hide role-only nav items
-  $$("[data-role-only]").forEach((node) => {
-    const want = node.getAttribute("data-role-only");
-    node.classList.toggle("is-visible", profile?.role === want);
-  });
 }
 onAuthChange(paintAuth);
 
