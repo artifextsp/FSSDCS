@@ -1,6 +1,6 @@
-import { clear, el } from "../utils.js?v=16";
-import { getCurrentEdition } from "../state.js?v=16";
-import { listProjects, listTeamsByProject } from "../data.js?v=16";
+import { clear, el } from "../utils.js?v=17";
+import { getCurrentEdition } from "../state.js?v=17";
+import { listProjects, listTeamsByProject } from "../data.js?v=17";
 
 export async function renderProjects() {
   const main = document.querySelector("[data-app-main]");

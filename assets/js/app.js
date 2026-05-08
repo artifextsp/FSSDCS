@@ -1,21 +1,21 @@
-import { defineRoute, startRouter, navigate, refreshCurrent } from "./router.js?v=16";
-import { onAuthChange, refreshAuth, signOut } from "./auth.js?v=16";
-import { loadInitialEdition, onEditionChange } from "./state.js?v=16";
-import { $, $$, el, clear } from "./utils.js?v=16";
-import { supabase } from "./supabase.js?v=16";
+import { defineRoute, startRouter, navigate, refreshCurrent } from "./router.js?v=17";
+import { onAuthChange, refreshAuth, signOut } from "./auth.js?v=17";
+import { loadInitialEdition, onEditionChange } from "./state.js?v=17";
+import { $, $$, el, clear } from "./utils.js?v=17";
+import { supabase } from "./supabase.js?v=17";
 
 console.log("[boot] app.js evaluado");
 
-import { renderLanding } from "./views/landing.js?v=16";
-import { renderProjects } from "./views/public_projects.js?v=16";
-import { renderProject } from "./views/public_project.js?v=16";
-import { renderRanking } from "./views/public_ranking.js?v=16";
-import { renderTeam } from "./views/team.js?v=16";
-import { renderJury } from "./views/jury.js?v=16";
-import { renderJuryEvaluate } from "./views/jury_evaluate.js?v=16";
-import { renderJuryTeamEvaluate } from "./views/jury_evaluate.js?v=16";
-import { renderPublicTeam } from "./views/public_team.js?v=16";
-import { renderAdmin } from "./views/admin.js?v=16";
+import { renderLanding } from "./views/landing.js?v=17";
+import { renderProjects } from "./views/public_projects.js?v=17";
+import { renderProject } from "./views/public_project.js?v=17";
+import { renderRanking } from "./views/public_ranking.js?v=17";
+import { renderTeam } from "./views/team.js?v=17";
+import { renderJury } from "./views/jury.js?v=17";
+import { renderJuryEvaluate } from "./views/jury_evaluate.js?v=17";
+import { renderJuryTeamEvaluate } from "./views/jury_evaluate.js?v=17";
+import { renderPublicTeam } from "./views/public_team.js?v=17";
+import { renderAdmin } from "./views/admin.js?v=17";
 
 /* ---- Header interactions ---- */
 const navToggle = $("[data-nav-toggle]");
@@ -35,7 +35,10 @@ if (yearEl) yearEl.textContent = new Date().getFullYear();
 const authSlot = $("[data-auth-slot]");
 
 function openLoginModal() {
-  const emailEl = el("input", { class: "input", type: "email", placeholder: "correo@ejemplo.com", autocomplete: "email" });
+  // Si ya hay un modal abierto, no abrimos otro encima.
+  if (document.querySelector("[data-login-modal]")) return;
+
+  const emailEl = el("input", { class: "input", type: "email", placeholder: "correo@ejemplo.com", autocomplete: "email", inputmode: "email", autocapitalize: "none", spellcheck: false });
   const passEl = el("input", { class: "input", type: "password", placeholder: "Contraseña", autocomplete: "current-password" });
   const errEl = el("div", { class: "error-banner", style: { display: "none" } });
 
@@ -48,19 +51,43 @@ function openLoginModal() {
       btn.disabled = true;
       btn.textContent = "Ingresando…";
       try {
-        const { signInWithPassword } = await import("./auth.js?v=16");
-        await signInWithPassword(emailEl.value.trim(), passEl.value);
-        const { getAuthSnapshot } = await import("./auth.js?v=16");
-        const { profile } = getAuthSnapshot();
-        // Redirect based on role
+        const auth = await import("./auth.js?v=17");
+        // Hard timeout: si el sign-in se cuelga (típico en mobile con red
+        // intermitente o por bloqueo de Web Locks) cortamos a los 12s para
+        // que el usuario no quede mirando "Ingresando…" indefinidamente.
+        await Promise.race([
+          auth.signInWithPassword(emailEl.value.trim(), passEl.value),
+          new Promise((_, rej) => setTimeout(() => rej(new Error("Tiempo de espera agotado. Verifica tu conexión a internet e intenta nuevamente.")), 12000)),
+        ]);
+        // Aseguramos que el cache de auth tenga el profile antes de redirigir.
+        let { profile } = auth.getAuthSnapshot();
+        if (!profile) {
+          // Intento adicional con timeout corto: si el fetch de profile se
+          // cuelga seguimos a la home y la vista decide a dónde mandarte.
+          await Promise.race([
+            auth.refreshAuth(),
+            new Promise((res) => setTimeout(res, 4000)),
+          ]).catch(() => null);
+          profile = auth.getAuthSnapshot().profile;
+        }
+        // Cerramos el modal antes de navegar para que el usuario vea la
+        // transición del panel sin el overlay encima.
+        overlay.remove();
         if (profile?.role === "admin") navigate("/admin");
         else if (profile?.role === "evaluator") navigate("/jurado");
         else navigate("/");
-        // Close modal
-        const modal = document.querySelector(".modal-overlay");
-        modal?.remove();
       } catch (err) {
-        errEl.textContent = err?.message || "Correo o contraseña incorrectos.";
+        const msg = err?.message || "";
+        // Mensajes amigables para los errores más comunes.
+        let friendly = msg;
+        if (/Invalid login/i.test(msg) || /invalid_credentials/i.test(msg)) {
+          friendly = "Correo o contraseña incorrectos.";
+        } else if (/Email not confirmed/i.test(msg)) {
+          friendly = "Tu correo aún no está confirmado. Pídele al admin que lo verifique.";
+        } else if (/Failed to fetch|NetworkError|fetch/i.test(msg)) {
+          friendly = "No se pudo conectar al servidor. Verifica tu conexión a internet.";
+        }
+        errEl.textContent = friendly || "No se pudo iniciar sesión. Intenta de nuevo.";
         errEl.style.display = "";
         btn.disabled = false;
         btn.textContent = "Ingresar";
@@ -74,13 +101,14 @@ function openLoginModal() {
     el("button", { class: "btn btn--primary btn--block", type: "submit", text: "Ingresar" }),
   ]);
 
-  const overlay = el("div", { class: "modal-overlay" }, [
-    el("div", { class: "modal", style: { maxWidth: "360px" } }, [
+  const overlay = el("div", { class: "modal-overlay", "data-login-modal": "" }, [
+    el("div", { class: "modal" }, [
       el("div", { class: "modal__header" }, [
         el("h2", { class: "modal__title", text: "Iniciar sesión" }),
         el("button", {
           class: "modal__close",
           type: "button",
+          "aria-label": "Cerrar",
           text: "✕",
           onclick: () => overlay.remove(),
         }),
