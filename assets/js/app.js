@@ -16,6 +16,7 @@ import { renderJuryEvaluate } from "./views/jury_evaluate.js?v=19";
 import { renderJuryTeamEvaluate } from "./views/jury_evaluate.js?v=19";
 import { renderPublicTeam } from "./views/public_team.js?v=19";
 import { renderAdmin } from "./views/admin.js?v=19";
+import { renderTeamReport } from "./views/team_report.js?v=19";
 
 /* ---- Header interactions ---- */
 const navToggle = $("[data-nav-toggle]");
@@ -212,6 +213,7 @@ defineRoute("/equipo", () => renderTeam());
 defineRoute("/jurado", () => renderJury());
 defineRoute("/jurado/proyecto/:id", ({ params }) => renderJuryEvaluate(params.id));
 defineRoute("/jurado/equipo/:id", ({ params }) => renderJuryTeamEvaluate(params.id));
+defineRoute("/mi-informe", () => renderTeamReport());
 defineRoute("/admin", () => renderAdmin({ section: "dashboard" }));
 defineRoute("/admin/proyectos/:id", ({ params }) => renderAdmin({ section: "proyecto", projectId: params.id }));
 defineRoute("/admin/equipos/:id", ({ params }) => renderAdmin({ section: "team", teamId: params.id }));

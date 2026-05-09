@@ -665,6 +665,50 @@ export async function analyticsGetAnswersForEvaluations(evalIds) {
   return data ?? [];
 }
 
+/* ---------------- Códigos de acceso a informes de equipo ---------------- */
+
+/**
+ * Admin: devuelve todos los equipos de una edición con su código de acceso,
+ * nombre de proyecto y datos de presentación.
+ */
+export async function adminGetTeamCodes(editionId) {
+  const { data, error } = await supabase
+    .from("teams")
+    .select("id, name, access_code, room, grade_label, presentation_order, project:projects(name)")
+    .eq("edition_id", editionId)
+    .order("name", { ascending: true });
+  if (error) throw error;
+  return data ?? [];
+}
+
+/**
+ * Admin: asigna el access_code a un equipo.
+ */
+export async function adminSetTeamCode(teamId, code) {
+  const { data, error } = await supabase
+    .from("teams")
+    .update({ access_code: code })
+    .eq("id", teamId)
+    .select("id, access_code")
+    .single();
+  if (error) throw error;
+  return data;
+}
+
+/**
+ * Público: valida el código de un equipo y devuelve los datos necesarios
+ * para generar el PDF de informe (sin nombres de jurados, solo numerados).
+ * La validación ocurre server-side mediante una función SECURITY DEFINER.
+ */
+export async function teamReportUnlock(teamId, accessCode) {
+  const { data, error } = await supabase.rpc("team_report_unlock", {
+    p_team_id: teamId,
+    p_access_code: String(accessCode).trim(),
+  });
+  if (error) throw error;
+  return data; // { team, project_name, members, evaluations, answers } o { error }
+}
+
 /**
  * Devuelve todos los integrantes de una lista de equipos.
  * Usado por el módulo de analítica para incluir nombres en informes.

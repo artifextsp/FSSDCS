@@ -4,6 +4,8 @@ import {
   analyticsGetEditionEvaluations,
   analyticsGetAnswersForEvaluations,
   analyticsGetTeamMembers,
+  adminGetTeamCodes,
+  adminSetTeamCode,
 } from "../data.js?v=19";
 
 /* ================================================================
@@ -710,7 +712,168 @@ function renderByTeams(container, { projects, teamMap, evaluations, evaluatorMap
 //  TAB 4: Informes PDF / CSV
 // ══════════════════════════════════════════════════════════════
 function renderReports(container, ctx) {
-  const { projects, projectMap, teamMap, evaluations, evaluatorMap, answersByEval, membersByTeam, scale } = ctx;
+  const { edition, projects, projectMap, teamMap, evaluations, evaluatorMap, answersByEval, membersByTeam, scale } = ctx;
+
+  // ── Códigos de acceso de equipos ─────────────────────────────
+  const codesSection = el("div", { class: "card mb-6" }, [
+    el("h3", { class: "card__title", text: "Códigos de acceso de equipos" }),
+    el("p", { class: "text-muted", style: { fontSize: "0.85rem", marginBottom: "var(--space-4)" } }, [
+      "Cada equipo recibe un código secreto de 3 dígitos para descargar su informe en ",
+      el("strong", { text: "#/mi-informe" }),
+      ". Solo tú como administrador puedes ver y distribuir estos códigos.",
+    ]),
+  ]);
+  container.append(codesSection);
+
+  const codesBody = el("div");
+  codesSection.append(codesBody);
+
+  async function loadAndRenderCodes() {
+    clear(codesBody);
+    codesBody.append(el("div", { class: "spinner", "aria-hidden": "true" }));
+    try {
+      const allTeams = await adminGetTeamCodes(edition.id);
+      clear(codesBody);
+
+      const withoutCode = allTeams.filter((t) => !t.access_code);
+
+      // Botones de acción
+      const actRow = el("div", { class: "btn-row mb-4" });
+
+      // Botón generar códigos
+      actRow.append(el("button", {
+        class: "btn btn--primary btn--sm",
+        text: withoutCode.length ? `Generar códigos (${withoutCode.length} sin código)` : "Regenerar todos los códigos",
+        onclick: async (e) => {
+          const btn = e.currentTarget;
+          btn.disabled = true; btn.textContent = "Generando…";
+          try {
+            const usedCodes = new Set(allTeams.filter((t) => t.access_code).map((t) => t.access_code));
+            const toAssign = withoutCode.length ? withoutCode : allTeams;
+            for (const team of toAssign) {
+              let code;
+              do { code = String(Math.floor(Math.random() * 900) + 100); } while (usedCodes.has(code));
+              usedCodes.add(code);
+              await adminSetTeamCode(team.id, code);
+            }
+            toast("Códigos generados correctamente", "success");
+            await loadAndRenderCodes();
+          } catch (err) {
+            toast("Error al generar códigos: " + (err?.message || err), "error");
+            btn.disabled = false; btn.textContent = "Generar códigos";
+          }
+        },
+      }));
+
+      // Botón descargar PDF de códigos
+      if (allTeams.some((t) => t.access_code)) {
+        actRow.append(el("button", {
+          class: "btn btn--ghost btn--sm",
+          text: "⬇ PDF de códigos (para imprimir)",
+          onclick: (e) => generateCodesPDF({ btn: e.currentTarget, edition, allTeams, projects }),
+        }));
+      }
+
+      codesBody.append(actRow);
+
+      // Búsqueda y tabla de equipos/códigos
+      let codeFilter = "";
+      const searchEl2 = searchInput("Buscar equipo por nombre…", (v) => { codeFilter = v; renderCodeTable(); });
+      codesBody.append(searchEl2);
+
+      const codeTableRoot = el("div");
+      codesBody.append(codeTableRoot);
+
+      function renderCodeTable() {
+        clear(codeTableRoot);
+        const filtered = codeFilter
+          ? allTeams.filter((t) => t.name.toLowerCase().includes(codeFilter.toLowerCase()))
+          : allTeams;
+
+        // Agrupar por proyecto
+        const byProject = {};
+        filtered.forEach((t) => {
+          const pName = t.project?.name || "Sin proyecto";
+          if (!byProject[pName]) byProject[pName] = [];
+          byProject[pName].push(t);
+        });
+
+        if (!filtered.length) {
+          codeTableRoot.append(el("div", { class: "empty", text: "Ningún equipo coincide." }));
+          return;
+        }
+
+        Object.entries(byProject)
+          .sort(([a], [b]) => a.localeCompare(b, "es"))
+          .forEach(([projName, teams]) => {
+            const rows = teams
+              .sort((a, b) => a.name.localeCompare(b.name, "es"))
+              .map((t) => {
+                const codeEl = t.access_code
+                  ? el("span", {
+                      style: {
+                        fontFamily: "var(--font-mono)", fontSize: "1.2rem", fontWeight: 700,
+                        color: "var(--color-primary)", letterSpacing: "0.15em",
+                        background: "var(--color-primary-soft)", padding: "2px 10px",
+                        borderRadius: "var(--radius-sm)",
+                      },
+                      text: t.access_code,
+                    })
+                  : el("span", { class: "text-muted", style: { fontStyle: "italic" }, text: "sin código" });
+
+                const regenBtn = el("button", {
+                  class: "btn btn--ghost btn--sm",
+                  title: "Regenerar código",
+                  text: "↺",
+                  onclick: async (ev) => {
+                    const b = ev.currentTarget; b.disabled = true;
+                    const usedNow = new Set(allTeams.filter((x) => x.access_code && x.id !== t.id).map((x) => x.access_code));
+                    let newCode;
+                    do { newCode = String(Math.floor(Math.random() * 900) + 100); } while (usedNow.has(newCode));
+                    try {
+                      await adminSetTeamCode(t.id, newCode);
+                      t.access_code = newCode;
+                      renderCodeTable();
+                      toast(`Nuevo código para ${t.name}: ${newCode}`, "success");
+                    } catch (err) {
+                      toast("Error: " + (err?.message || err), "error");
+                      b.disabled = false;
+                    }
+                  },
+                });
+
+                const codeTd = el("td", { style: "padding:8px 10px;border-bottom:1px solid var(--color-border)" }, [codeEl]);
+                const nameTd = el("td", { style: "padding:8px 10px;font-weight:600;border-bottom:1px solid var(--color-border)", text: t.name });
+                const gradeTd = el("td", { style: "padding:8px 10px;font-size:0.85rem;color:var(--color-text-muted);border-bottom:1px solid var(--color-border)", text: t.grade_label || "—" });
+                const actTd = el("td", { style: "padding:8px 10px;border-bottom:1px solid var(--color-border)" }, [regenBtn]);
+                return el("tr", {}, [nameTd, gradeTd, codeTd, actTd]);
+              });
+
+            codeTableRoot.append(
+              el("div", { class: "mb-4" }, [
+                el("p", { style: "font-weight:700;font-size:0.88rem;color:var(--color-text-muted);margin-bottom:8px;text-transform:uppercase;letter-spacing:.05em", text: projName }),
+                el("table", { style: "width:100%;border-collapse:collapse" }, [
+                  el("thead", {}, [el("tr", {}, [
+                    el("th", { style: "text-align:left;padding:6px 10px;font-size:0.77rem;color:var(--color-text-muted);font-weight:600;text-transform:uppercase", text: "Equipo" }),
+                    el("th", { style: "text-align:left;padding:6px 10px;font-size:0.77rem;color:var(--color-text-muted);font-weight:600;text-transform:uppercase", text: "Grado" }),
+                    el("th", { style: "text-align:left;padding:6px 10px;font-size:0.77rem;color:var(--color-text-muted);font-weight:600;text-transform:uppercase", text: "Código" }),
+                    el("th", { style: "padding:6px 10px" }),
+                  ])]),
+                  el("tbody", {}, rows),
+                ]),
+              ])
+            );
+          });
+      }
+
+      renderCodeTable();
+    } catch (err) {
+      clear(codesBody);
+      codesBody.append(el("div", { class: "error-banner", text: "Error al cargar códigos: " + (err?.message || err) }));
+    }
+  }
+
+  loadAndRenderCodes();
 
   // ── Configuración de escala ───────────────────────────────────
   let workingScale = scale.map((s) => ({ ...s }));
@@ -1035,10 +1198,51 @@ async function generateProjectPDF({ btn, proj, projTeams, projEvals, jurorRows, 
 
 // ══════════════════════════════════════════════════════════════
 //  Generación de PDF: Equipo individual
+//  Los jurados se muestran como "Jurado 1", "Jurado 2"... para
+//  proteger su identidad. Válido tanto para admin como para público.
 // ══════════════════════════════════════════════════════════════
-async function generateTeamPDF({ btn, team, proj, teamEvals, evaluatorMap, answersByEval, membersByTeam, scale }) {
+
+/**
+ * Genera el PDF de informe de un equipo a partir de datos ya resueltos.
+ * Acepta dos formatos:
+ *   - Modo admin: { btn, team, proj, teamEvals, evaluatorMap, answersByEval, membersByTeam, scale }
+ *   - Modo público (RPC): { btn, rpcData, scale }
+ */
+export async function generateTeamPDF(opts) {
+  const { btn, scale } = opts;
   if (btn) { btn.disabled = true; btn.textContent = "Generando…"; }
+
   try {
+    // Normalizar datos según el origen (admin vs público)
+    let team, projName, mems, scored, answersByEval;
+
+    if (opts.rpcData) {
+      // Datos vienen del RPC público
+      const d = opts.rpcData;
+      team = d.team;
+      projName = d.project_name;
+      mems = d.members || [];
+      scored = (d.evaluations || []).filter((e) => e.total_score != null);
+      answersByEval = {};
+      (d.answers || []).forEach((a) => {
+        if (!answersByEval[a.evaluation_id]) answersByEval[a.evaluation_id] = [];
+        answersByEval[a.evaluation_id].push(a);
+      });
+    } else {
+      // Datos vienen del panel admin
+      team = opts.team;
+      projName = opts.proj?.name || "";
+      mems = (opts.membersByTeam || {})[team.id] || [];
+      scored = (opts.teamEvals || []).filter((e) => e.total_score != null)
+        .sort((a, b) => Number(b.total_score) - Number(a.total_score));
+      answersByEval = opts.answersByEval || {};
+    }
+
+    const teamAvg = scored.length
+      ? scored.reduce((s, e) => s + Number(e.total_score), 0) / scored.length
+      : null;
+    const { label: lvl, equivalent: eq } = getEquivalent(teamAvg, scale);
+
     const { jsPDF } = await loadJsPDF();
     const doc = new jsPDF({ orientation: "portrait", unit: "mm", format: "a4" });
     const pageW = doc.internal.pageSize.getWidth();
@@ -1048,32 +1252,24 @@ async function generateTeamPDF({ btn, team, proj, teamEvals, evaluatorMap, answe
     pdfHeader(doc, pageW, margin);
     let y = 28;
 
-    const scored = teamEvals.filter((e) => e.total_score != null);
-    const teamAvg = scored.length ? scored.reduce((s, e) => s + Number(e.total_score), 0) / scored.length : null;
-    const { label: lvl, equivalent: eq } = getEquivalent(teamAvg, scale);
-    const mems = membersByTeam[team.id] || [];
-
-    // Título
     doc.setFont("helvetica", "bold"); doc.setFontSize(15); doc.setTextColor(...C.heading);
-    doc.text("Informe Individual de Equipo", margin, y); y += 7;
+    doc.text("Informe de Desempeño del Equipo", margin, y); y += 7;
     doc.setFontSize(12); doc.setTextColor(...C.sub); doc.text(team.name, margin, y); y += 5;
     doc.setFont("helvetica", "normal"); doc.setFontSize(8); doc.setTextColor(...C.muted);
-    doc.text(`Proyecto: ${proj.name}  ·  Generado: ${fmtDateLong()}`, margin, y); y += 8;
+    doc.text(`Proyecto: ${projName}  ·  Generado: ${fmtDateLong()}`, margin, y); y += 8;
     doc.setDrawColor(180, 195, 230); doc.line(margin, y, pageW - margin, y); y += 8;
 
-    // Datos del equipo
+    // ── Datos del equipo ─────────────────────────────────────
     pdfSectionTitle(doc, "Datos del equipo", margin, y); y += 3;
-    const teamDataBody = [
-      ["Equipo", team.name],
-      ["Proyecto", proj.name],
-    ];
-    if (team.gradeLabel) teamDataBody.push(["Grado", team.gradeLabel]);
+    const teamDataBody = [["Equipo", team.name], ["Proyecto", projName]];
+    if (team.grade_label || team.gradeLabel) teamDataBody.push(["Grado", team.grade_label || team.gradeLabel]);
     if (team.room) teamDataBody.push(["Salón / Sala", team.room]);
-    if (team.presentationOrder) teamDataBody.push(["Orden de presentación", String(team.presentationOrder)]);
+    if (team.presentation_order || team.presentationOrder)
+      teamDataBody.push(["Orden de presentación", String(team.presentation_order || team.presentationOrder)]);
     teamDataBody.push(
       ["Puntaje promedio obtenido", fmtScore(teamAvg)],
       ["Equivalencia académica", lvl],
-      ["Calificación equivalente", eq ? fmtScore(eq) : "—"],
+      ["Calificación equivalente", eq ? fmtScore(eq) : "—"]
     );
     doc.autoTable({
       startY: y, head: [["Campo", "Valor"]], body: teamDataBody,
@@ -1084,12 +1280,14 @@ async function generateTeamPDF({ btn, team, proj, teamEvals, evaluatorMap, answe
     });
     y = doc.lastAutoTable.finalY + 10;
 
-    // Integrantes
+    // ── Integrantes ───────────────────────────────────────────
     if (mems.length) {
       pdfSectionTitle(doc, "Integrantes del equipo", margin, y); y += 3;
       doc.autoTable({
         startY: y, head: [["#", "Nombre completo", "Grado"]],
-        body: mems.map((m, i) => [`${i + 1}`, m.full_name, team.gradeLabel || "—"]),
+        body: mems.map((m, i) => [
+          `${i + 1}`, m.full_name, team.grade_label || team.gradeLabel || "—",
+        ]),
         styles: { fontSize: 9, cellPadding: 3 },
         headStyles: { fillColor: [30, 50, 120], textColor: 255, fontStyle: "bold" },
         alternateRowStyles: { fillColor: [240, 244, 255] },
@@ -1099,61 +1297,55 @@ async function generateTeamPDF({ btn, team, proj, teamEvals, evaluatorMap, answe
       y = doc.lastAutoTable.finalY + 10;
     }
 
-    // Puntajes por jurado
-    pdfSectionTitle(doc, "Calificaciones por jurado", margin, y); y += 3;
-    const jurorBody = scored
-      .sort((a, b) => Number(b.total_score) - Number(a.total_score))
-      .map((ev, i) => {
-        const { label: jLvl, equivalent: jEq } = getEquivalent(ev.total_score, scale);
-        return [`#${i + 1}`, evaluatorMap[ev.evaluator_id] || "—", fmtScore(ev.total_score), jLvl, jEq ? fmtScore(jEq) : "—"];
-      });
-
+    // ── Calificaciones (jurados anónimos) ─────────────────────
+    pdfSectionTitle(doc, "Calificaciones por jurado evaluador", margin, y); y += 3;
     doc.autoTable({
       startY: y,
-      head: [["#", "Jurado", "Puntaje", "Nivel", "Calificación eq."]],
-      body: jurorBody,
+      head: [["Evaluador", "Puntaje obtenido", "Nivel académico", "Calificación eq."]],
+      body: scored.map((ev, i) => {
+        const { label: jLvl, equivalent: jEq } = getEquivalent(ev.total_score, scale);
+        return [`Jurado ${i + 1}`, fmtScore(ev.total_score), jLvl, jEq ? fmtScore(jEq) : "—"];
+      }),
       styles: { fontSize: 9, cellPadding: 3 },
       headStyles: { fillColor: [60, 90, 170], textColor: 255, fontStyle: "bold" },
       alternateRowStyles: { fillColor: [245, 247, 255] },
-      columnStyles: {
-        0: { cellWidth: 10 }, 2: { halign: "center" }, 3: { halign: "center" }, 4: { halign: "center" },
-      },
+      columnStyles: { 1: { halign: "center" }, 2: { halign: "center" }, 3: { halign: "center" } },
       margin: { left: margin, right: margin }, theme: "striped",
     });
     y = doc.lastAutoTable.finalY + 10;
 
-    // Promedio final destacado
+    // ── Resultado final destacado ─────────────────────────────
     if (y > 260) { doc.addPage(); y = 20; }
     doc.setFillColor(30, 50, 120);
     doc.roundedRect(margin, y, pageW - margin * 2, 20, 4, 4, "F");
     doc.setFont("helvetica", "bold"); doc.setFontSize(11); doc.setTextColor(255, 255, 255);
-    doc.text(`Promedio final: ${fmtScore(teamAvg)}  →  ${lvl}  (${eq ? fmtScore(eq) : "—"})`, pageW / 2, y + 12, { align: "center" });
+    doc.text(
+      `Promedio final: ${fmtScore(teamAvg)}  →  ${lvl}  (Calificación: ${eq ? fmtScore(eq) : "—"})`,
+      pageW / 2, y + 12, { align: "center" }
+    );
     y += 28;
 
-    // Observaciones / feedback por jurado
-    const evalsWithObs = scored.filter((ev) => (answersByEval[ev.id] || []).some((a) => a.observation?.trim()));
+    // ── Observaciones / feedback (jurado anónimo) ─────────────
+    const evalsWithObs = scored.filter((ev) =>
+      (answersByEval[ev.id] || []).some((a) => a.observation?.trim())
+    );
     if (evalsWithObs.length) {
       if (y > 240) { doc.addPage(); y = 20; }
-      pdfSectionTitle(doc, "Observaciones y feedback", margin, y); y += 3;
-
-      const obsBody = evalsWithObs
-        .sort((a, b) => Number(b.total_score) - Number(a.total_score))
-        .map((ev) => {
+      pdfSectionTitle(doc, "Observaciones y feedback de los evaluadores", margin, y); y += 3;
+      doc.autoTable({
+        startY: y,
+        head: [["Evaluador", "Puntaje", "Observaciones y recomendaciones"]],
+        body: evalsWithObs.map((ev, i) => {
           const obs = (answersByEval[ev.id] || [])
             .filter((a) => a.observation?.trim())
             .map((a) => (a.item_key ? `[${a.item_key}] ${a.observation.trim()}` : a.observation.trim()))
             .join("\n\n");
-          return [evaluatorMap[ev.evaluator_id] || "—", fmtScore(ev.total_score), obs];
-        });
-
-      doc.autoTable({
-        startY: y,
-        head: [["Jurado", "Puntaje", "Observaciones"]],
-        body: obsBody,
+          return [`Jurado ${i + 1}`, fmtScore(ev.total_score), obs];
+        }),
         styles: { fontSize: 8, cellPadding: 3, valign: "top", overflow: "linebreak" },
         headStyles: { fillColor: [60, 90, 170], textColor: 255, fontStyle: "bold" },
         alternateRowStyles: { fillColor: [245, 247, 255] },
-        columnStyles: { 0: { cellWidth: 40 }, 1: { cellWidth: 20, halign: "center" }, 2: { cellWidth: "auto" } },
+        columnStyles: { 0: { cellWidth: 26 }, 1: { cellWidth: 20, halign: "center" }, 2: { cellWidth: "auto" } },
         margin: { left: margin, right: margin }, theme: "striped",
       });
     }
@@ -1211,6 +1403,75 @@ async function generateTeamCSV({ btn, team, proj, teamEvals, membersByTeam, scal
     toast("Error al generar el CSV: " + (err?.message || err), "error");
   } finally {
     if (btn) { btn.disabled = false; btn.textContent = "⬇ CSV"; }
+  }
+}
+
+// ══════════════════════════════════════════════════════════════
+//  Generación de PDF: Lista de códigos (solo admin)
+// ══════════════════════════════════════════════════════════════
+async function generateCodesPDF({ btn, edition, allTeams, projects }) {
+  if (btn) { btn.disabled = true; btn.textContent = "Generando…"; }
+  try {
+    const { jsPDF } = await loadJsPDF();
+    const doc = new jsPDF({ orientation: "portrait", unit: "mm", format: "a4" });
+    const pageW = doc.internal.pageSize.getWidth();
+    const margin = 15;
+
+    pdfHeader(doc, pageW, margin);
+    let y = 26;
+
+    doc.setFont("helvetica", "bold"); doc.setFontSize(14); doc.setTextColor(30, 50, 100);
+    doc.text("Códigos de Acceso – Informes de Equipos", margin, y); y += 7;
+    doc.setFont("helvetica", "normal"); doc.setFontSize(9); doc.setTextColor(110, 120, 150);
+    doc.text(`${edition?.name || ""} ${edition?.year || ""}  ·  Generado: ${fmtDateLong()}`, margin, y); y += 5;
+    doc.text("DOCUMENTO CONFIDENCIAL. Distribuya cada código únicamente al equipo correspondiente.", margin, y); y += 8;
+    doc.setDrawColor(180, 195, 230); doc.line(margin, y, pageW - margin, y); y += 8;
+
+    // Instrucciones
+    doc.setFont("helvetica", "italic"); doc.setFontSize(8); doc.setTextColor(100, 110, 140);
+    const siteUrl = window.location.origin + window.location.pathname.replace(/index\.html$/, "") + "#/mi-informe";
+    doc.text(`Los equipos pueden descargar su informe en: ${siteUrl}`, margin, y); y += 8;
+
+    // Agrupar por proyecto
+    const byProject = {};
+    allTeams.filter((t) => t.access_code).forEach((t) => {
+      const pName = t.project?.name || "Sin proyecto";
+      if (!byProject[pName]) byProject[pName] = [];
+      byProject[pName].push(t);
+    });
+
+    for (const [projName, teams] of Object.entries(byProject).sort(([a], [b]) => a.localeCompare(b, "es"))) {
+      if (y > 250) { doc.addPage(); y = 20; }
+      doc.setFont("helvetica", "bold"); doc.setFontSize(10); doc.setTextColor(40, 60, 130);
+      doc.text(projName, margin, y); y += 3;
+
+      const tableBody = teams
+        .sort((a, b) => a.name.localeCompare(b.name, "es"))
+        .map((t) => [t.name, t.grade_label || "—", t.room || "—", t.access_code || "—"]);
+
+      doc.autoTable({
+        startY: y,
+        head: [["Equipo", "Grado", "Salón", "Código secreto"]],
+        body: tableBody,
+        styles: { fontSize: 9, cellPadding: 3 },
+        headStyles: { fillColor: [40, 70, 160], textColor: 255, fontStyle: "bold" },
+        alternateRowStyles: { fillColor: [240, 244, 255] },
+        columnStyles: {
+          3: { fontStyle: "bold", halign: "center", fontSize: 11, textColor: [30, 60, 160] },
+        },
+        margin: { left: margin, right: margin }, theme: "striped",
+      });
+      y = doc.lastAutoTable.finalY + 10;
+    }
+
+    pdfFooter(doc, pageW);
+    doc.save(`codigos-acceso-${edition?.year || "feria"}.pdf`);
+    toast("PDF de códigos descargado", "success");
+  } catch (err) {
+    console.error("[analytics] codes PDF error", err);
+    toast("Error al generar el PDF: " + (err?.message || err), "error");
+  } finally {
+    if (btn) { btn.disabled = false; btn.textContent = "⬇ PDF de códigos (para imprimir)"; }
   }
 }
 
