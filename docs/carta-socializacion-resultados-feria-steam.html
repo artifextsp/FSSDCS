@@ -1,0 +1,373 @@
+<!doctype html>
+<html lang="es">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Socialización de resultados — Feria STEAM</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+  <link href="https://fonts.googleapis.com/css2?family=Source+Serif+4:ital,opsz,wght@0,8..60,400;0,8..60,600;0,8..60,700;1,8..60,400&family=DM+Sans:ital,opsz,wght@0,9..40,400;0,9..40,500;0,9..40,700&display=swap" rel="stylesheet" />
+  <style>
+    :root {
+      --ink: #1a2332;
+      --muted: #5c6575;
+      --line: #d8dde6;
+      --accent: #2d4a7c;
+      --bg: #fafbfc;
+    }
+    * { box-sizing: border-box; }
+    body {
+      margin: 0;
+      font-family: "DM Sans", system-ui, sans-serif;
+      font-size: 16px;
+      line-height: 1.65;
+      color: var(--ink);
+      background: var(--bg);
+    }
+    .wrap { max-width: 680px; margin: 0 auto; padding: 2.5rem 1.5rem 4rem; }
+    @media print {
+      body { background: #fff; }
+      .no-print { display: none !important; }
+      .wrap { padding: 0; max-width: 100%; }
+    }
+    .mast {
+      border-bottom: 2px solid var(--accent);
+      padding-bottom: 1.25rem;
+      margin-bottom: 2rem;
+    }
+    .mast h1 {
+      font-family: "Source Serif 4", Georgia, serif;
+      font-size: clamp(1.35rem, 4vw, 1.75rem);
+      font-weight: 700;
+      margin: 0 0 0.35rem;
+      letter-spacing: -0.02em;
+      color: var(--accent);
+    }
+    .mast p { margin: 0; font-size: 0.9rem; color: var(--muted); font-weight: 500; }
+    h2 {
+      font-family: "Source Serif 4", Georgia, serif;
+      font-size: 1.05rem;
+      font-weight: 700;
+      margin: 2rem 0 0.75rem;
+      color: var(--accent);
+    }
+    p { margin: 0 0 1rem; }
+    .lead { font-size: 1.05rem; color: var(--ink); }
+    .box {
+      background: #fff;
+      border: 1px solid var(--line);
+      border-radius: 10px;
+      padding: 1.25rem 1.35rem;
+      margin: 1.25rem 0;
+    }
+    .box--soft { background: #f4f6f9; border-color: #e8ebf0; }
+    table.scale {
+      width: 100%;
+      border-collapse: collapse;
+      font-size: 0.88rem;
+      margin: 0.5rem 0 0;
+    }
+    table.scale th, table.scale td {
+      text-align: left;
+      padding: 0.55rem 0.65rem;
+      border-bottom: 1px solid var(--line);
+    }
+    table.scale th {
+      font-weight: 600;
+      color: var(--muted);
+      font-size: 0.72rem;
+      text-transform: uppercase;
+      letter-spacing: 0.06em;
+    }
+    table.scale tr:last-child td { border-bottom: none; }
+    .mono { font-family: ui-monospace, monospace; font-size: 0.85rem; word-break: break-all; }
+    ul.steps { margin: 0.5rem 0 0; padding-left: 1.2rem; }
+    ul.steps li { margin-bottom: 0.45rem; }
+    .actions {
+      position: sticky;
+      bottom: 0;
+      left: 0;
+      right: 0;
+      padding: 1rem 0;
+      background: linear-gradient(transparent, var(--bg) 25%);
+      display: flex;
+      gap: 0.75rem;
+      flex-wrap: wrap;
+      justify-content: center;
+    }
+    .btn {
+      font-family: inherit;
+      font-weight: 600;
+      font-size: 0.95rem;
+      padding: 0.75rem 1.35rem;
+      border-radius: 10px;
+      border: none;
+      cursor: pointer;
+      transition: transform 0.15s, box-shadow 0.15s;
+    }
+    .btn--primary {
+      background: var(--accent);
+      color: #fff;
+      box-shadow: 0 2px 12px rgba(45, 74, 124, 0.25);
+    }
+    .btn--primary:hover { transform: translateY(-1px); }
+    .btn--ghost {
+      background: #fff;
+      color: var(--accent);
+      border: 1px solid var(--line);
+    }
+    .foot {
+      margin-top: 2.5rem;
+      padding-top: 1.25rem;
+      border-top: 1px solid var(--line);
+      font-size: 0.82rem;
+      color: var(--muted);
+    }
+  </style>
+</head>
+<body>
+  <div class="wrap">
+    <header class="mast">
+      <h1>Socialización de resultados</h1>
+      <p>Plataforma Feria STEAM · Seminario Diocesano Cristo Sacerdote</p>
+    </header>
+
+    <p class="lead">
+      Estimados equipos participantes, docentes y familias:<br />
+      Agradecemos de corazón su compromiso, creatividad y apoyo durante este proceso. Cada proyecto,
+      cada hora de preparación y cada gesto de aliento desde el hogar hace posible que esta feria sea
+      mucho más que una competencia: un espacio de aprendizaje compartido.
+    </p>
+
+    <p>
+      En nuestra institución trabajamos <strong>progresivamente</strong> por una cultura de <strong>amor por la academia</strong>:
+      el estudio y el esfuerzo honesto como caminos de crecimiento personal y comunitario. La
+      <strong>evaluación objetiva</strong> que aplicamos en la Feria STEAM no busca etiquetar a nadie;
+      la entendemos como un <strong>instrumento de mejora continua</strong>: una fotografía clara de lo alcanzado
+      que orienta fortalezas, retos y pasos siguientes, siempre con respeto y rigor.
+    </p>
+
+    <h2>Cómo funcionan las fases de evaluación</h2>
+    <div class="box box--soft">
+      <p style="margin-bottom:0.75rem;"><strong>Primera fase — Sustentación.</strong> Valoración de la exposición oral y el trabajo académico presentado ante el jurado.</p>
+      <p style="margin-bottom:0;"><strong>Segunda fase — Competencia en campo.</strong> Valoración en el entorno de la feria (desempeño en el concurso o muestra en sitio).</p>
+    </div>
+    <p>
+      <strong>Ambas fases se suman</strong> para formar el puntaje que determina el <strong>ranking final de la competencia</strong>,
+      disponible de manera transparente en la plataforma cuando la institución habilite la publicación de resultados.
+    </p>
+
+    <h2>Equivalencia numérica y calificación académica</h2>
+    <p style="margin-bottom:0.5rem;">
+      Los jurados asignan <strong>puntos según la escala del concurso</strong>. Para el registro en el sistema académico institucional,
+      esas puntuaciones se relacionan con niveles y calificaciones equivalentes según la siguiente tabla (ajustable por el comité académico según cada año lectivo).
+    </p>
+    <div class="box">
+      <table class="scale" aria-label="Tabla de equivalencias">
+        <thead>
+          <tr><th>Rango de puntos (concurso)</th><th>Nivel académico</th><th>Calificación equivalente</th></tr>
+        </thead>
+        <tbody>
+          <tr><td>0,0 — 2,0</td><td>Bajo</td><td>2,0</td></tr>
+          <tr><td>2,1 — 3,0</td><td>Básico</td><td>3,0</td></tr>
+          <tr><td>3,1 — 3,9</td><td>Alto</td><td>3,9</td></tr>
+          <tr><td>4,0 — 4,5</td><td>Alto</td><td>4,5</td></tr>
+          <tr><td>4,6 — 5,0</td><td>Superior</td><td>5,0</td></tr>
+        </tbody>
+      </table>
+    </div>
+
+    <h2>Plataforma y descarga del informe por equipo</h2>
+    <p>
+      Los resultados consolidados de la feria están en nuestra plataforma oficial. Desde la <strong>página principal</strong> puede consultarse proyectos, ranking e información general.
+    </p>
+    <div class="box">
+      <p style="margin:0 0 0.35rem; font-size:0.82rem; color:var(--muted); text-transform:uppercase; letter-spacing:0.05em;">Enlace a la plataforma</p>
+      <p class="mono" style="margin:0;" id="linkPrincipal">https://artifextsp.github.io/FSSDCS/</p>
+    </div>
+    <p>
+      Cada equipo puede <strong>descargar su propio informe de desempeño</strong> (puntuaciones, equivalencia académica y observaciones generales de los evaluadores, sin publicar nombres de jurados)
+      entrando a la sección <strong>«Mi informe»</strong>, buscando el <strong>nombre exacto del equipo</strong> e ingresando el <strong>código secreto de tres dígitos</strong> que la institución entregó de forma confidencial.
+    </p>
+    <div class="box box--soft">
+      <p style="margin:0 0 0.35rem; font-size:0.82rem; color:var(--muted); text-transform:uppercase; letter-spacing:0.05em;">Acceso directo al informe del equipo</p>
+      <p class="mono" style="margin:0;" id="linkInforme">https://artifextsp.github.io/FSSDCS/#/mi-informe</p>
+    </div>
+    <ul class="steps">
+      <li>Abrir el enlace de «Mi informe» (o ir desde el menú de la plataforma).</li>
+      <li>Escribir el nombre del equipo y seleccionarlo en la lista.</li>
+      <li>Digitar el código de tres dígitos asignado al equipo.</li>
+      <li>Descargar el archivo PDF del informe.</li>
+    </ul>
+
+    <h2>Consultas</h2>
+    <p>
+      Para inquietudes adicionales sobre resultados, códigos de acceso o el uso de la plataforma, puede contactarnos al <strong>314&nbsp;309&nbsp;0748</strong>.
+      Con gusto le orientamos con la debida diligencia y respeto.
+    </p>
+
+    <p style="margin-top:1.75rem;">
+      Nuevamente, gracias por su confianza. Seguimos construyendo juntos una comunidad educativa donde el estudio, el civismo y la alegría por aprender se fortalecen día a día.
+    </p>
+
+    <footer class="foot">
+      Documento institucional para socialización de resultados · Feria STEAM · Seminario Diocesano Cristo Sacerdote.
+    </footer>
+  </div>
+
+  <div class="actions no-print">
+    <button type="button" class="btn btn--primary" id="btnPdf">Descargar PDF</button>
+    <button type="button" class="btn btn--ghost" id="btnPrint">Imprimir / Guardar como PDF</button>
+  </div>
+
+  <script src="https://cdn.jsdelivr.net/npm/jspdf@2.5.1/dist/jspdf.umd.min.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/jspdf-autotable@3.8.3/dist/jspdf.plugin.autotable.min.js"></script>
+  <script>
+    (function () {
+      var URL_BASE = "https://artifextsp.github.io/FSSDCS/";
+      var URL_INFORME = URL_BASE + "#/mi-informe";
+
+      document.getElementById("linkPrincipal").textContent = URL_BASE;
+      document.getElementById("linkInforme").textContent = URL_INFORME;
+
+      function buildPdf() {
+        var jspdf = window.jspdf;
+        if (!jspdf || !jspdf.jsPDF) {
+          alert("No se pudo cargar la librería de PDF. Comprueba tu conexión a internet.");
+          return;
+        }
+        var doc = new jspdf.jsPDF({ unit: "mm", format: "a4", orientation: "portrait" });
+        var margin = 22;
+        var pageW = doc.internal.pageSize.getWidth();
+        var y = margin;
+        var maxW = pageW - margin * 2;
+        var lineH = 6;
+        var C = {
+          title: [26, 42, 78],
+          body: [26, 32, 44],
+          muted: [95, 102, 118],
+          line: [210, 215, 225],
+        };
+
+        function addTitle(text, size) {
+          doc.setFont("helvetica", "bold");
+          doc.setFontSize(size || 14);
+          doc.setTextColor.apply(doc, C.title);
+          doc.text(text, margin, y);
+          y += size ? size * 0.55 : 8;
+        }
+        function addSub(text) {
+          doc.setFont("helvetica", "normal");
+          doc.setFontSize(9);
+          doc.setTextColor.apply(doc, C.muted);
+          doc.text(text, margin, y);
+          y += 6;
+        }
+        function para(txt, opts) {
+          opts = opts || {};
+          doc.setFont("helvetica", opts.bold ? "bold" : "normal");
+          doc.setFontSize(opts.size || 10);
+          doc.setTextColor.apply(doc, C.body);
+          var lines = doc.splitTextToSize(txt, maxW);
+          lines.forEach(function (line) {
+            if (y > 275) { doc.addPage(); y = margin; }
+            doc.text(line, margin, y);
+            y += lineH * (opts.lead ? 1.15 : 1);
+          });
+          y += 3;
+        }
+
+        // Header bar
+        doc.setFillColor(45, 74, 124);
+        doc.rect(0, 0, pageW, 11, "F");
+        doc.setFont("helvetica", "bold");
+        doc.setFontSize(8);
+        doc.setTextColor(235, 238, 245);
+        doc.text("Feria STEAM · Seminario Diocesano Cristo Sacerdote", margin, 7.5);
+
+        y = margin + 4;
+        addTitle("Socialización de resultados", 15);
+        addSub("Plataforma oficial · Documento para familias y equipos participantes");
+        doc.setDrawColor.apply(doc, C.line);
+        doc.line(margin, y, pageW - margin, y);
+        y += 10;
+
+        para(
+          "Estimados equipos participantes, docentes y familias: agradecemos de corazón su compromiso, creatividad y apoyo durante este proceso. Cada proyecto, cada hora de preparación y cada gesto de aliento desde el hogar hace posible que esta feria sea mucho más que una competencia: un espacio de aprendizaje compartido.",
+          { lead: true }
+        );
+
+        para(
+          "En nuestra institución trabajamos progresivamente por una cultura de amor por la academia: el estudio y el esfuerzo honesto como caminos de crecimiento personal y comunitario. La evaluación objetiva que aplicamos en la Feria STEAM no busca etiquetar a nadie; la entendemos como un instrumento de mejora continua: una fotografía clara de lo alcanzado que orienta fortalezas, retos y pasos siguientes, siempre con respeto y rigor."
+        );
+
+        if (y > 240) { doc.addPage(); y = margin; }
+        addTitle("Fases de evaluación", 11);
+        y += 2;
+        para(
+          "Primera fase — Sustentación: valoración de la exposición oral y del trabajo académico ante el jurado. Segunda fase — Competencia en campo: valoración en el entorno de la feria. Ambas fases se suman para formar el puntaje del ranking final de la competencia, visible en la plataforma cuando la institución publique los resultados.",
+          { size: 10 }
+        );
+
+        if (y > 220) { doc.addPage(); y = margin; }
+        addTitle("Equivalencia puntaje del concurso y calificación académica", 11);
+        y += 2;
+        doc.autoTable({
+          startY: y,
+          head: [["Puntos (concurso)", "Nivel académico", "Calificación equivalente"]],
+          body: [
+            ["0,0 — 2,0", "Bajo", "2,0"],
+            ["2,1 — 3,0", "Básico", "3,0"],
+            ["3,1 — 3,9", "Alto", "3,9"],
+            ["4,0 — 4,5", "Alto", "4,5"],
+            ["4,6 — 5,0", "Superior", "5,0"],
+          ],
+          styles: { fontSize: 9, cellPadding: 3.2, textColor: C.body },
+          headStyles: { fillColor: [45, 74, 124], textColor: 255, fontStyle: "bold", fontSize: 9 },
+          alternateRowStyles: { fillColor: [248, 249, 251] },
+          margin: { left: margin, right: margin },
+        });
+        y = doc.lastAutoTable.finalY + 10;
+
+        if (y > 230) { doc.addPage(); y = margin; }
+        addTitle("Plataforma e informe por equipo", 11);
+        y += 2;
+        para(
+          "Página principal: " + URL_BASE + " Cada equipo puede descargar su informe de desempeño en " + URL_INFORME + " usando el nombre del equipo y el código secreto de tres dígitos entregado por la institución.",
+          { size: 9.5 }
+        );
+        para(
+          "Pasos: (1) Abrir «Mi informe». (2) Buscar y seleccionar el equipo. (3) Ingresar el código de tres dígitos. (4) Descargar el PDF. Las observaciones de los evaluadores aparecen sin revelar nombres de jurados, para proteger su intimidad y la calidad de la retroalimentación.",
+          { size: 9.5 }
+        );
+
+        if (y > 250) { doc.addPage(); y = margin; }
+        addTitle("Consultas", 11);
+        y += 2;
+        para("Para inquietudes: 314 309 0748.", { size: 10, bold: true });
+        para(
+          "Nuevamente, gracias por su confianza. Seguimos construyendo juntos una comunidad educativa donde el estudio, el civismo y la alegría por aprender se fortalecen día a día."
+        );
+
+        var n = doc.internal.getNumberOfPages();
+        for (var i = 1; i <= n; i++) {
+          doc.setPage(i);
+          doc.setFillColor(45, 74, 124);
+          doc.rect(0, 287, pageW, 10, "F");
+          doc.setFont("helvetica", "normal");
+          doc.setFontSize(7);
+          doc.setTextColor(210, 215, 230);
+          doc.text("Feria STEAM · Socialización de resultados · Pág. " + i + " / " + n, pageW / 2, 293.5, { align: "center" });
+        }
+
+        doc.save("socializacion-resultados-feria-steam.pdf");
+      }
+
+      document.getElementById("btnPdf").addEventListener("click", buildPdf);
+      document.getElementById("btnPrint").addEventListener("click", function () {
+        window.print();
+      });
+    })();
+  </script>
+</body>
+</html>
