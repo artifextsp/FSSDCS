@@ -631,6 +631,40 @@ export async function adminResetEvaluatorPassword(userId, newPassword) {
   return true;
 }
 
+/* ---------------- Analítica ---------------- */
+
+/**
+ * Devuelve todas las evaluaciones enviadas de una edición con nombre de equipo,
+ * proyecto y jurado. Usado exclusivamente por el módulo de analítica (admin).
+ */
+export async function analyticsGetEditionEvaluations(editionId) {
+  const { data, error } = await supabase
+    .from("evaluations")
+    .select(`
+      id, total_score, status, phase, project_id, team_id, evaluator_id, updated_at,
+      team:teams!inner(id, name, edition_id),
+      evaluator:evaluators!inner(id, profile:profiles(display_name))
+    `)
+    .eq("team.edition_id", editionId)
+    .eq("status", "submitted");
+  if (error) throw error;
+  return data ?? [];
+}
+
+/**
+ * Devuelve todas las respuestas (puntaje por ítem + observaciones) de un
+ * conjunto de IDs de evaluaciones. Usado por el módulo de analítica.
+ */
+export async function analyticsGetAnswersForEvaluations(evalIds) {
+  if (!evalIds?.length) return [];
+  const { data, error } = await supabase
+    .from("evaluation_answers")
+    .select("evaluation_id, item_key, score, observation")
+    .in("evaluation_id", evalIds);
+  if (error) throw error;
+  return data ?? [];
+}
+
 export async function setAssignment({ projectId, evaluatorId, assigned }) {
   if (assigned) {
     const { error } = await supabase

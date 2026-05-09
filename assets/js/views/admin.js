@@ -17,6 +17,7 @@ import {
 import { supabase } from "../supabase.js?v=19";
 import { parseFile } from "../parsers.js?v=19";
 import { navigate } from "../router.js?v=19";
+import { renderAnalyticsAdmin } from "./analytics.js?v=19";
 
 export async function renderAdmin({ section = "dashboard", projectId = null, teamId = null } = {}) {
   console.log("[admin] renderAdmin start", { section, projectId, teamId });
@@ -86,7 +87,7 @@ export async function renderAdmin({ section = "dashboard", projectId = null, tea
   ]));
 
   const tabs = el("div", { class: "tabs" });
-  [["dashboard", "Resumen"], ["ediciones", "Ediciones"], ["proyectos", "Proyectos"], ["jurados", "Jurados"], ["ranking", "Ranking"]]
+  [["dashboard", "Resumen"], ["ediciones", "Ediciones"], ["proyectos", "Proyectos"], ["jurados", "Jurados"], ["ranking", "Ranking"], ["analitica", "Analítica"]]
     .forEach(([k, l]) => tabs.append(el("a", { class: `tabs__btn ${section === k ? "is-active" : ""}`, href: `#/admin/${k}`, text: l })));
   wrap.append(tabs);
 
@@ -98,6 +99,7 @@ export async function renderAdmin({ section = "dashboard", projectId = null, tea
   if (section === "proyectos") return renderProjectsAdmin(body);
   if (section === "jurados") return renderEvaluatorsAdmin(body);
   if (section === "ranking") return renderRankingAdmin(body);
+  if (section === "analitica") return renderAnalyticsAdmin(body, getCurrentEdition());
   if (section === "proyecto") return renderProjectAdmin(body, projectId);
   if (section === "team") return renderTeamAdmin(body, teamId);
   body.append(el("div", { class: "empty", text: "Sección no encontrada." }));
