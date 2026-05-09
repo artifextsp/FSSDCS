@@ -642,7 +642,7 @@ export async function analyticsGetEditionEvaluations(editionId) {
     .from("evaluations")
     .select(`
       id, total_score, status, phase, project_id, team_id, evaluator_id, updated_at,
-      team:teams!inner(id, name, edition_id),
+      team:teams!inner(id, name, edition_id, room, grade_label, presentation_order),
       evaluator:evaluators!inner(id, profile:profiles(display_name))
     `)
     .eq("team.edition_id", editionId)
@@ -661,6 +661,21 @@ export async function analyticsGetAnswersForEvaluations(evalIds) {
     .from("evaluation_answers")
     .select("evaluation_id, item_key, score, observation")
     .in("evaluation_id", evalIds);
+  if (error) throw error;
+  return data ?? [];
+}
+
+/**
+ * Devuelve todos los integrantes de una lista de equipos.
+ * Usado por el módulo de analítica para incluir nombres en informes.
+ */
+export async function analyticsGetTeamMembers(teamIds) {
+  if (!teamIds?.length) return [];
+  const { data, error } = await supabase
+    .from("team_members")
+    .select("id, team_id, full_name, sort_order")
+    .in("team_id", teamIds)
+    .order("sort_order", { ascending: true });
   if (error) throw error;
   return data ?? [];
 }
