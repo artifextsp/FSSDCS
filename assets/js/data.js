@@ -774,3 +774,124 @@ export async function upsertActiveConfig({ projectId, phase, methodType, scaleMi
   if (error) throw error;
   return data;
 }
+
+/* ================== Pruebas de Campo ================== */
+
+export async function listFieldCompetitions(editionId) {
+  const { data, error } = await supabase
+    .from("field_competitions")
+    .select("*, project:projects(name), evaluator:evaluators(id, user_id, profile:profiles(display_name))")
+    .eq("edition_id", editionId)
+    .order("created_at", { ascending: true });
+  if (error) throw error;
+  return data ?? [];
+}
+
+export async function getFieldCompetition(id) {
+  const { data, error } = await supabase
+    .from("field_competitions")
+    .select("*, project:projects(name, id), evaluator:evaluators(id, user_id, profile:profiles(display_name))")
+    .eq("id", id)
+    .maybeSingle();
+  if (error) throw error;
+  return data;
+}
+
+export async function createFieldCompetition({ projectId, editionId, competitionType, config }) {
+  const { data, error } = await supabase
+    .from("field_competitions")
+    .insert({ project_id: projectId, edition_id: editionId, competition_type: competitionType, config: config || {} })
+    .select("*")
+    .single();
+  if (error) throw error;
+  return data;
+}
+
+export async function updateFieldCompetition(id, patch) {
+  const { data, error } = await supabase
+    .from("field_competitions")
+    .update(patch)
+    .eq("id", id)
+    .select("*")
+    .single();
+  if (error) throw error;
+  return data;
+}
+
+export async function deleteFieldCompetition(id) {
+  const { error } = await supabase.from("field_competitions").delete().eq("id", id);
+  if (error) throw error;
+}
+
+/* --- Rondas --- */
+
+export async function listFieldRounds(competitionId) {
+  const { data, error } = await supabase
+    .from("field_rounds")
+    .select("*")
+    .eq("competition_id", competitionId)
+    .order("round_number", { ascending: true });
+  if (error) throw error;
+  return data ?? [];
+}
+
+export async function createFieldRound({ competitionId, roundNumber, label }) {
+  const { data, error } = await supabase
+    .from("field_rounds")
+    .insert({ competition_id: competitionId, round_number: roundNumber, label: label || null })
+    .select("*")
+    .single();
+  if (error) throw error;
+  return data;
+}
+
+export async function deleteFieldRound(id) {
+  const { error } = await supabase.from("field_rounds").delete().eq("id", id);
+  if (error) throw error;
+}
+
+/* --- Resultados --- */
+
+export async function listFieldResults(roundId) {
+  const { data, error } = await supabase
+    .from("field_results")
+    .select("*, team:teams(id, name)")
+    .eq("round_id", roundId)
+    .order("computed_points", { ascending: false });
+  if (error) throw error;
+  return data ?? [];
+}
+
+export async function listFieldResultsByCompetition(competitionId) {
+  const { data, error } = await supabase
+    .from("field_results")
+    .select("*, team:teams(id, name), round:field_rounds!inner(id, round_number, competition_id)")
+    .eq("round.competition_id", competitionId)
+    .order("created_at", { ascending: true });
+  if (error) throw error;
+  return data ?? [];
+}
+
+export async function upsertFieldResult({ roundId, teamId, rawValue, computedPoints, meta }) {
+  const { data, error } = await supabase
+    .from("field_results")
+    .upsert(
+      {
+        round_id: roundId,
+        team_id: teamId,
+        raw_value: rawValue ?? null,
+        computed_points: computedPoints ?? 0,
+        meta: meta ?? {},
+      },
+      { onConflict: "round_id,team_id" }
+    )
+    .select("*")
+    .single();
+  if (error) throw error;
+  return data;
+}
+
+export async function deleteFieldResult(id) {
+  const { error } = await supabase.from("field_results").delete().eq("id", id);
+  if (error) throw error;
+}
