@@ -245,18 +245,269 @@ async function renderTimeTrial(container, comp) {
 
 /* ──────────────────────────────────────────────────────────────────
    PERFORMANCE: puntos acumulables por eventos/criterios
-   (Stub - se implementará en E5)
+   El juez marca qué eventos cumplió cada equipo en cada ronda.
+   computed_points = suma de puntos de los eventos logrados.
    ────────────────────────────────────────────────────────────────── */
 async function renderPerformance(container, comp) {
-  container.append(el("div", { class: "empty", text: "Strategy 'performance' próximamente (E5)." }));
+  const config = comp.config || {};
+  const events = config.events || [{ key: "event_1", label: "Evento 1", points: 2 }];
+
+  let teams, rounds, allResults;
+  try {
+    [teams, rounds, allResults] = await Promise.all([
+      listTeamsByProject(comp.project_id),
+      listFieldRounds(comp.id),
+      listFieldResultsByCompetition(comp.id),
+    ]);
+  } catch (err) { container.append(el("div", { class: "error-banner", text: "Error: " + err?.message })); return; }
+
+  container.append(
+    el("div", { class: "section-head" }, [
+      el("div", {}, [
+        el("h2", { text: comp.project?.name || "Competencia" }),
+        el("p", { class: "text-muted", text: `Desempeño con criterios · ${teams.length} equipos` }),
+      ]),
+      comp.status === "active"
+        ? el("button", { class: "btn btn--primary", text: "+ Nueva ronda", onclick: addRound })
+        : null,
+    ])
+  );
+
+  container.append(el("div", { class: "mb-4", style: "font-size:0.83rem;color:var(--color-text-muted)" }, [
+    el("strong", { text: "Criterios: " }),
+    ...events.map((e) => el("span", { text: `${e.label} (${e.points}pts)  ` })),
+  ]));
+
+  const roundsContainer = el("div", { class: "flex-col gap-4" });
+  container.append(roundsContainer);
+
+  function renderRounds() {
+    clear(roundsContainer);
+    if (!rounds.length) { roundsContainer.append(el("div", { class: "empty", text: "No hay rondas." })); return; }
+    rounds.forEach((round) => {
+      const rr = allResults.filter((r) => (r.round?.id || r.round_id) === round.id);
+      roundsContainer.append(renderRoundCard(round, rr));
+    });
+  }
+
+  function renderRoundCard(round, results) {
+    const card = el("div", { class: "card" });
+    card.append(el("div", {
+      class: "flex items-center",
+      style: "justify-content:space-between;margin-bottom:var(--space-3)",
+    }, [
+      el("h3", { style: "margin:0", text: round.label || `Ronda ${round.round_number}` }),
+      comp.status === "active"
+        ? el("button", { class: "btn btn--danger btn--sm", text: "Eliminar", onclick: async () => {
+            if (!confirm("¿Eliminar esta ronda?")) return;
+            try { await deleteFieldRound(round.id); rounds = rounds.filter((r) => r.id !== round.id); allResults = allResults.filter((r) => (r.round?.id || r.round_id) !== round.id); renderRounds(); toast("Eliminada", "success"); } catch (err) { toast(err?.message, "error"); }
+          }})
+        : null,
+    ]));
+
+    teams.forEach((team) => {
+      const existing = results.find((r) => (r.team?.id || r.team_id) === team.id);
+      const meta = existing?.meta || {};
+      const row = el("div", { style: "padding:var(--space-2) 0;border-bottom:1px solid var(--color-border)" });
+      row.append(el("div", { style: "font-weight:600;margin-bottom:4px" }, [
+        el("span", { text: team.name }),
+        el("span", { class: "badge", style: "margin-left:8px", text: `${existing?.computed_points ?? 0} pts` }),
+      ]));
+
+      const checksRow = el("div", { class: "flex gap-3", style: "flex-wrap:wrap" });
+      events.forEach((evt) => {
+        const checked = !!meta[evt.key];
+        const cb = el("label", { style: "display:inline-flex;align-items:center;gap:4px;cursor:pointer;font-size:0.85rem" }, [
+          el("input", {
+            type: "checkbox",
+            checked,
+            disabled: comp.status !== "active",
+            onchange: async (e) => {
+              const newMeta = { ...meta, [evt.key]: e.target.checked };
+              const pts = events.reduce((sum, ev) => sum + (newMeta[ev.key] ? ev.points : 0), 0);
+              try {
+                await upsertFieldResult({ roundId: round.id, teamId: team.id, rawValue: pts, computedPoints: pts, meta: newMeta });
+                const idx = allResults.findIndex((r) => (r.round?.id || r.round_id) === round.id && (r.team?.id || r.team_id) === team.id);
+                const nr = { round_id: round.id, round: { id: round.id }, team_id: team.id, team: { id: team.id, name: team.name }, raw_value: pts, computed_points: pts, meta: newMeta };
+                if (idx >= 0) allResults[idx] = nr; else allResults.push(nr);
+                renderRounds();
+              } catch (err) { toast(err?.message, "error"); }
+            },
+          }),
+          el("span", { text: `${evt.label} (${evt.points})` }),
+        ]);
+        checksRow.append(cb);
+      });
+      row.append(checksRow);
+      card.append(row);
+    });
+
+    return card;
+  }
+
+  async function addRound() {
+    const nextNum = rounds.length ? Math.max(...rounds.map((r) => r.round_number)) + 1 : 1;
+    try { const nr = await createFieldRound({ competitionId: comp.id, roundNumber: nextNum, label: `Ronda ${nextNum}` }); rounds.push(nr); renderRounds(); toast(`Ronda ${nextNum}`, "success"); } catch (err) { toast(err?.message, "error"); }
+  }
+
+  renderRounds();
 }
 
 /* ──────────────────────────────────────────────────────────────────
    COMBAT: victoria/empate/derrota entre pares
-   (Stub - se implementará en E5)
+   El juez selecciona dos equipos y registra ganador/empate por ronda.
+   Cada combate se guarda como un result por equipo con meta indicando rival y outcome.
    ────────────────────────────────────────────────────────────────── */
 async function renderCombat(container, comp) {
-  container.append(el("div", { class: "empty", text: "Strategy 'combat' próximamente (E5)." }));
+  const config = comp.config || {};
+  const winPts = config.win_points ?? 3;
+  const drawPts = config.draw_points ?? 1;
+  const lossPts = config.loss_points ?? 0;
+
+  let teams, rounds, allResults;
+  try {
+    [teams, rounds, allResults] = await Promise.all([
+      listTeamsByProject(comp.project_id),
+      listFieldRounds(comp.id),
+      listFieldResultsByCompetition(comp.id),
+    ]);
+  } catch (err) { container.append(el("div", { class: "error-banner", text: "Error: " + err?.message })); return; }
+
+  container.append(
+    el("div", { class: "section-head" }, [
+      el("div", {}, [
+        el("h2", { text: comp.project?.name || "Competencia" }),
+        el("p", { class: "text-muted", text: `Combate · ${teams.length} equipos · V=${winPts} E=${drawPts} D=${lossPts}` }),
+      ]),
+      comp.status === "active"
+        ? el("button", { class: "btn btn--primary", text: "+ Nueva ronda", onclick: addRound })
+        : null,
+    ])
+  );
+
+  const roundsContainer = el("div", { class: "flex-col gap-4" });
+  container.append(roundsContainer);
+
+  function renderRounds() {
+    clear(roundsContainer);
+    if (!rounds.length) { roundsContainer.append(el("div", { class: "empty", text: "No hay rondas." })); return; }
+    rounds.forEach((round) => {
+      const rr = allResults.filter((r) => (r.round?.id || r.round_id) === round.id);
+      roundsContainer.append(renderCombatRound(round, rr));
+    });
+
+    // Tabla acumulada
+    const accum = el("div", { class: "card mt-4" });
+    accum.append(el("h3", { style: "margin:0 0 var(--space-3)", text: "Acumulado" }));
+    const totals = {};
+    teams.forEach((t) => { totals[t.id] = { name: t.name, pts: 0, w: 0, d: 0, l: 0 }; });
+    allResults.forEach((r) => {
+      const tid = r.team?.id || r.team_id;
+      if (totals[tid]) {
+        totals[tid].pts += Number(r.computed_points) || 0;
+        const o = r.meta?.outcome;
+        if (o === "win") totals[tid].w++;
+        else if (o === "draw") totals[tid].d++;
+        else if (o === "loss") totals[tid].l++;
+      }
+    });
+    const sorted = Object.values(totals).sort((a, b) => b.pts - a.pts);
+    sorted.forEach((t, i) => {
+      accum.append(el("div", {
+        style: "display:flex;justify-content:space-between;padding:4px 0;border-bottom:1px solid var(--color-border);font-size:0.85rem",
+      }, [
+        el("span", { text: `${i + 1}. ${t.name}` }),
+        el("span", { text: `${t.pts}pts (${t.w}V ${t.d}E ${t.l}D)` }),
+      ]));
+    });
+    roundsContainer.append(accum);
+  }
+
+  function renderCombatRound(round, results) {
+    const card = el("div", { class: "card" });
+    card.append(el("div", {
+      class: "flex items-center",
+      style: "justify-content:space-between;margin-bottom:var(--space-3)",
+    }, [
+      el("h3", { style: "margin:0", text: round.label || `Ronda ${round.round_number}` }),
+      comp.status === "active"
+        ? el("button", { class: "btn btn--danger btn--sm", text: "Eliminar", onclick: async () => {
+            if (!confirm("¿Eliminar ronda?")) return;
+            try { await deleteFieldRound(round.id); rounds = rounds.filter((r) => r.id !== round.id); allResults = allResults.filter((r) => (r.round?.id || r.round_id) !== round.id); renderRounds(); toast("Eliminada", "success"); } catch (err) { toast(err?.message, "error"); }
+          }})
+        : null,
+    ]));
+
+    // Combates registrados en esta ronda
+    const fights = [];
+    const seen = new Set();
+    results.forEach((r) => {
+      const tid = r.team?.id || r.team_id;
+      const rival = r.meta?.rival_id;
+      if (rival && !seen.has(`${tid}:${rival}`) && !seen.has(`${rival}:${tid}`)) {
+        seen.add(`${tid}:${rival}`);
+        const rivalResult = results.find((x) => (x.team?.id || x.team_id) === rival && x.meta?.rival_id === tid);
+        fights.push({ teamA: tid, teamB: rival, resultA: r, resultB: rivalResult });
+      }
+    });
+
+    fights.forEach((f) => {
+      const nameA = teams.find((t) => t.id === f.teamA)?.name || "?";
+      const nameB = teams.find((t) => t.id === f.teamB)?.name || "?";
+      const outcomeA = f.resultA?.meta?.outcome || "—";
+      card.append(el("div", {
+        style: "padding:4px 0;border-bottom:1px solid var(--color-border);font-size:0.85rem",
+      }, [
+        el("span", { text: `${nameA} vs ${nameB} → ${outcomeA === "win" ? nameA + " gana" : outcomeA === "draw" ? "Empate" : nameB + " gana"}` }),
+      ]));
+    });
+
+    // Formulario para nuevo combate
+    if (comp.status === "active") {
+      const selA = el("select", { class: "select", style: "width:auto;flex:1" });
+      const selB = el("select", { class: "select", style: "width:auto;flex:1" });
+      teams.forEach((t) => { selA.append(el("option", { value: t.id, text: t.name })); selB.append(el("option", { value: t.id, text: t.name })); });
+      if (teams.length > 1) selB.value = teams[1].id;
+
+      const outcomeSelect = el("select", { class: "select", style: "width:auto" });
+      outcomeSelect.append(el("option", { value: "win_a", text: "Gana equipo A" }));
+      outcomeSelect.append(el("option", { value: "draw", text: "Empate" }));
+      outcomeSelect.append(el("option", { value: "win_b", text: "Gana equipo B" }));
+
+      const saveBtn = el("button", { class: "btn btn--accent btn--sm", text: "Registrar", onclick: async () => {
+        const a = selA.value, b = selB.value;
+        if (a === b) { toast("Selecciona equipos diferentes", "error"); return; }
+        const outcome = outcomeSelect.value;
+        let ptsA, ptsB, oA, oB;
+        if (outcome === "win_a") { ptsA = winPts; ptsB = lossPts; oA = "win"; oB = "loss"; }
+        else if (outcome === "win_b") { ptsA = lossPts; ptsB = winPts; oA = "loss"; oB = "win"; }
+        else { ptsA = drawPts; ptsB = drawPts; oA = "draw"; oB = "draw"; }
+        try {
+          const rA = await upsertFieldResult({ roundId: round.id, teamId: a, rawValue: ptsA, computedPoints: ptsA, meta: { rival_id: b, outcome: oA } });
+          const rB = await upsertFieldResult({ roundId: round.id, teamId: b, rawValue: ptsB, computedPoints: ptsB, meta: { rival_id: a, outcome: oB } });
+          allResults.push(
+            { ...rA, round: { id: round.id }, team: { id: a, name: teams.find((t) => t.id === a)?.name } },
+            { ...rB, round: { id: round.id }, team: { id: b, name: teams.find((t) => t.id === b)?.name } }
+          );
+          renderRounds();
+          toast("Combate registrado", "success");
+        } catch (err) { toast(err?.message, "error"); }
+      }});
+
+      card.append(el("div", { class: "flex gap-2 mt-3", style: "flex-wrap:wrap;align-items:center" }, [
+        selA, el("span", { text: "vs" }), selB, outcomeSelect, saveBtn,
+      ]));
+    }
+
+    return card;
+  }
+
+  async function addRound() {
+    const nextNum = rounds.length ? Math.max(...rounds.map((r) => r.round_number)) + 1 : 1;
+    try { const nr = await createFieldRound({ competitionId: comp.id, roundNumber: nextNum, label: `Ronda ${nextNum}` }); rounds.push(nr); renderRounds(); toast(`Ronda ${nextNum}`, "success"); } catch (err) { toast(err?.message, "error"); }
+  }
+
+  renderRounds();
 }
 
 /* ──────────────────────────────────────────────────────────────────
