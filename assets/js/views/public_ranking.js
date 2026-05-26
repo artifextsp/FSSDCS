@@ -186,9 +186,14 @@ export async function renderRanking() {
     onChange: () => { if (currentTab === "global") paintGlobal(); },
   });
 
+  const unsubField = subscribeTable({
+    table: "field_results",
+    onChange: () => { if (currentTab === "field") paintFieldTab(); },
+  });
+
   await paintGlobal();
 
-  return { cleanup: () => unsub?.() };
+  return { cleanup: () => { unsub?.(); unsubField?.(); } };
 }
 
 function rankRow(r) {

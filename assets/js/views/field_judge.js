@@ -7,6 +7,7 @@ import {
   listFieldResultsByCompetition,
 } from "../data.js?v=19";
 import { listTeamsByProject } from "../data.js?v=19";
+import { subscribeTable } from "../realtime.js?v=19";
 
 /* ================================================================
    Vista: Juez de Campo (#/campo/:competitionId)
@@ -38,6 +39,21 @@ export async function renderFieldJudge(competitionId) {
 
   clear(section);
   await strategy.render(section, comp);
+
+  // Realtime: refrescar cuando otros escriben resultados en esta competencia
+  const unsub = subscribeTable({
+    table: "field_results",
+    onChange: (payload) => {
+      // Debounce: evitar refrescar en cascada mientras el propio juez escribe
+      if (renderFieldJudge._refreshTimer) clearTimeout(renderFieldJudge._refreshTimer);
+      renderFieldJudge._refreshTimer = setTimeout(() => {
+        clear(section);
+        strategy.render(section, comp);
+      }, 1500);
+    },
+  });
+
+  return { cleanup: () => unsub?.() };
 }
 
 /* ================================================================
