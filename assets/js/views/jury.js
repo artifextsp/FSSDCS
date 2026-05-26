@@ -7,6 +7,15 @@ import {
 } from "../data.js?v=19";
 import { supabase } from "../supabase.js?v=19";
 
+const TYPE_LABELS = {
+  time_trial: "Prueba de tiempo",
+  performance: "Desempeño con criterios",
+  combat: "Combate / Enfrentamiento",
+  elimination: "Eliminación progresiva",
+  timed_quantity: "Cantidad en tiempo",
+};
+const STATUS_LABELS = { setup: "En configuración", active: "En curso", finished: "Finalizada" };
+
 export async function renderJury() {
   const main = document.querySelector("[data-app-main]");
   clear(main);
@@ -147,6 +156,35 @@ export async function renderJury() {
       el("div", { class: "btn btn--primary btn--sm", text: "Evaluar →" }),
     ]));
   });
+
+  // ── Competencias de campo asignadas al juez ─────────────────────
+  try {
+    const { data: myFieldComps } = await supabase
+      .from("field_competitions")
+      .select("id, competition_type, status, project:projects(name)")
+      .not("assigned_evaluator_id", "is", null)
+      .in("status", ["active", "finished"]);
+
+    // Filtrar solo las que me pertenecen (RLS ya lo hizo, pero igual son seguras)
+    if (myFieldComps?.length) {
+      wrap.append(el("div", { class: "section-head mt-6" }, [
+        el("h2", { text: "Pruebas de campo" }),
+      ]));
+      const fieldList = el("div", { class: "grid grid--cards" });
+      wrap.append(fieldList);
+      myFieldComps.forEach((fc) => {
+        fieldList.append(el("a", {
+          class: "project-card",
+          href: `#/campo/${fc.id}`,
+        }, [
+          el("div", { class: "project-card__cover project-card__cover--placeholder", style: "background:var(--color-accent-soft)" }),
+          el("div", { class: "project-card__title", text: fc.project?.name || "Competencia" }),
+          el("div", { class: "project-card__meta", text: `${TYPE_LABELS[fc.competition_type] || fc.competition_type} · ${STATUS_LABELS[fc.status]}` }),
+          el("div", { class: `btn btn--sm ${fc.status === "active" ? "btn--accent" : "btn--ghost"}`, text: fc.status === "active" ? "Registrar →" : "Ver resultados →" }),
+        ]));
+      });
+    }
+  } catch { /* silencioso: si no hay competencias asignadas, no mostramos nada */ }
 }
 
 function paintLogin(root) {
