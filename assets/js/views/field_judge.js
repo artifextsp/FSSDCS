@@ -40,20 +40,81 @@ export async function renderFieldJudge(competitionId) {
   clear(section);
   await strategy.render(section, comp);
 
+  // Sección de fotos del juez de campo
+  section.append(await buildPhotoSection(comp));
+
   // Realtime: refrescar cuando otros escriben resultados en esta competencia
   const unsub = subscribeTable({
     table: "field_results",
     onChange: (payload) => {
-      // Debounce: evitar refrescar en cascada mientras el propio juez escribe
       if (renderFieldJudge._refreshTimer) clearTimeout(renderFieldJudge._refreshTimer);
       renderFieldJudge._refreshTimer = setTimeout(() => {
         clear(section);
-        strategy.render(section, comp);
+        strategy.render(section, comp).then(() => {
+          buildPhotoSection(comp).then((ps) => section.append(ps));
+        });
       }, 1500);
     },
   });
 
   return { cleanup: () => unsub?.() };
+}
+
+async function buildPhotoSection(comp) {
+  const { uploadTeamPhoto, listTeamPhotos, deleteTeamPhoto, signedPhotoUrl } = await import("../data.js?v=19");
+  const { listTeamsByProject } = await import("../data.js?v=19");
+
+  const wrap = el("div", { class: "card mt-6" });
+  wrap.append(el("h3", { style: "margin:0 0 var(--space-3)", text: "📷 Fotos de la competencia" }));
+  wrap.append(el("p", { class: "text-muted", style: "margin:0 0 var(--space-3);font-size:0.83rem", text: "Toma fotos de los equipos durante la competencia. Se comprimen automáticamente." }));
+
+  // Selector de equipo + botón subir
+  const teams = await listTeamsByProject(comp.project_id);
+  const teamSelect = el("select", { class: "select", style: "max-width:200px" });
+  teams.forEach((t) => teamSelect.append(el("option", { value: t.id, text: t.name })));
+
+  const fileInput = el("input", { type: "file", accept: "image/*", capture: "environment", style: "display:none" });
+  const uploadBtn = el("button", { class: "btn btn--accent btn--sm", text: "📷 Tomar/subir foto", onclick: () => fileInput.click() });
+
+  fileInput.addEventListener("change", async () => {
+    const file = fileInput.files?.[0];
+    if (!file) return;
+    uploadBtn.disabled = true;
+    uploadBtn.textContent = "Subiendo…";
+    try {
+      await uploadTeamPhoto({ teamId: teamSelect.value, file, caption: `Campo: ${comp.project?.name || ""}` });
+      toast("Foto subida", "success");
+      refreshPhotos();
+    } catch (err) { toast("Error: " + (err?.message || err), "error"); }
+    finally { uploadBtn.disabled = false; uploadBtn.textContent = "📷 Tomar/subir foto"; fileInput.value = ""; }
+  });
+
+  wrap.append(el("div", { class: "flex gap-2 items-center mb-3", style: "flex-wrap:wrap" }, [teamSelect, uploadBtn, fileInput]));
+
+  const photosGrid = el("div", { class: "flex gap-2", style: "flex-wrap:wrap;max-height:200px;overflow-y:auto" });
+  wrap.append(photosGrid);
+
+  async function refreshPhotos() {
+    clear(photosGrid);
+    const tid = teamSelect.value;
+    if (!tid) return;
+    try {
+      const photos = await listTeamPhotos(tid);
+      if (!photos.length) { photosGrid.append(el("span", { class: "text-muted", style: "font-size:0.82rem", text: "Sin fotos aún" })); return; }
+      for (const photo of photos.slice(-8)) {
+        try {
+          const url = await signedPhotoUrl(photo.storage_path, 600);
+          const img = el("img", { src: url, style: "width:80px;height:80px;object-fit:cover;border-radius:var(--radius-sm);cursor:pointer", onclick: () => window.open(url, "_blank") });
+          photosGrid.append(img);
+        } catch {}
+      }
+    } catch {}
+  }
+
+  teamSelect.addEventListener("change", refreshPhotos);
+  refreshPhotos();
+
+  return wrap;
 }
 
 /* ================================================================
@@ -292,8 +353,11 @@ async function renderTimeTrial(container, comp) {
     const sorted = [...roundResults].sort((a, b) =>
       lowerIsBetter ? a.raw_value - b.raw_value : b.raw_value - a.raw_value
     );
+    // Empates: mismos tiempos = mismo puesto = mismos puntos
+    let rank = 1;
     for (let i = 0; i < sorted.length; i++) {
-      const posConfig = positions.find((p) => p.place === i + 1);
+      if (i > 0 && sorted[i].raw_value !== sorted[i - 1].raw_value) rank = i + 1;
+      const posConfig = positions.find((p) => p.place === rank);
       const pts = posConfig ? posConfig.points : 0;
       if (sorted[i].computed_points !== pts) {
         await upsertFieldResult({ roundId: round.id, teamId: sorted[i].team?.id || sorted[i].team_id, rawValue: sorted[i].raw_value, computedPoints: pts, meta: {} });
@@ -310,9 +374,16 @@ async function renderTimeTrial(container, comp) {
       .map((r) => ({ teamId: r.team?.id || r.team_id, val: r.raw_value }));
     roundResults.push({ teamId, val: newVal });
     roundResults.sort((a, b) => lowerIsBetter ? a.val - b.val : b.val - a.val);
-    const pos = roundResults.findIndex((r) => r.teamId === teamId) + 1;
-    const posConfig = positions.find((p) => p.place === pos);
-    return posConfig ? posConfig.points : 0;
+    // Empates: si hay valores iguales antes, comparten posición
+    let rank = 1;
+    for (let i = 0; i < roundResults.length; i++) {
+      if (i > 0 && roundResults[i].val !== roundResults[i - 1].val) rank = i + 1;
+      if (roundResults[i].teamId === teamId) {
+        const posConfig = positions.find((p) => p.place === rank);
+        return posConfig ? posConfig.points : 0;
+      }
+    }
+    return 0;
   }
 
   renderRounds();
@@ -921,15 +992,21 @@ async function renderTimedQuantity(container, comp) {
       .map((r) => ({ teamId: r.team?.id || r.team_id, val: r.raw_value }));
     roundResults.push({ teamId, val: newVal });
     roundResults.sort((a, b) => lowerIsBetter ? a.val - b.val : b.val - a.val);
-    const pos = roundResults.findIndex((r) => r.teamId === teamId);
-    return pointsByPos[pos] ?? 0;
+    let rank = 0;
+    for (let i = 0; i < roundResults.length; i++) {
+      if (i === 0 || roundResults[i].val !== roundResults[i - 1].val) rank = i;
+      if (roundResults[i].teamId === teamId) return pointsByPos[rank] ?? 0;
+    }
+    return 0;
   }
 
   async function recalcTQRound(round) {
     const roundResults = allResults.filter((r) => (r.round?.id || r.round_id) === round.id && r.raw_value != null);
     const sorted = [...roundResults].sort((a, b) => lowerIsBetter ? a.raw_value - b.raw_value : b.raw_value - a.raw_value);
+    let rank = 0;
     for (let i = 0; i < sorted.length; i++) {
-      const pts = pointsByPos[i] ?? 0;
+      if (i === 0 || sorted[i].raw_value !== sorted[i - 1].raw_value) rank = i;
+      const pts = pointsByPos[rank] ?? 0;
       if (sorted[i].computed_points !== pts) {
         await upsertFieldResult({ roundId: round.id, teamId: sorted[i].team?.id || sorted[i].team_id, rawValue: sorted[i].raw_value, computedPoints: pts, meta: {} });
         sorted[i].computed_points = pts;

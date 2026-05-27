@@ -1314,13 +1314,67 @@ export async function generateTeamPDF(opts) {
     });
     y = doc.lastAutoTable.finalY + 10;
 
+    // ── Puntajes de pruebas de campo ──────────────────────────
+    let fieldRankText = "";
+    try {
+      const { listFieldResultsByCompetition, listFieldCompetitions, listFieldRounds } = await import("../data.js?v=19");
+      const { supabase } = await import("../supabase.js?v=19");
+      // Buscar competencia del proyecto
+      const projId = opts.proj?.id || opts.rpcData?.team?.project_id || team.project_id;
+      if (projId) {
+        const { data: fcomps } = await supabase.from("field_competitions").select("id, competition_type, config").eq("project_id", projId).limit(1);
+        if (fcomps?.length) {
+          const fc = fcomps[0];
+          const rounds = await listFieldRounds(fc.id);
+          const results = await listFieldResultsByCompetition(fc.id);
+          const myResults = results.filter((r) => (r.team?.id || r.team_id) === team.id);
+
+          if (myResults.length) {
+            if (y > 240) { doc.addPage(); y = 20; }
+            pdfSectionTitle(doc, "Puntajes de pruebas de campo", margin, y); y += 3;
+
+            const roundRows = rounds.map((rd) => {
+              const res = myResults.find((r) => (r.round?.id || r.round_id) === rd.id);
+              return [rd.label || `Ronda ${rd.round_number}`, res ? String(res.raw_value ?? "—") : "—", res ? `${res.computed_points} pts` : "0 pts"];
+            });
+            const totalCampo = myResults.reduce((s, r) => s + (Number(r.computed_points) || 0), 0);
+            roundRows.push(["TOTAL CAMPO", "", `${totalCampo} pts`]);
+
+            doc.autoTable({
+              startY: y, head: [["Ronda", "Valor registrado", "Puntos obtenidos"]], body: roundRows,
+              styles: { fontSize: 9, cellPadding: 3 },
+              headStyles: { fillColor: [34, 120, 60], textColor: 255, fontStyle: "bold" },
+              alternateRowStyles: { fillColor: [240, 255, 244] },
+              columnStyles: { 1: { halign: "center" }, 2: { halign: "center" } },
+              margin: { left: margin, right: margin }, theme: "striped",
+            });
+            y = doc.lastAutoTable.finalY + 6;
+
+            // Ranking del equipo
+            const allTeamTotals = {};
+            results.forEach((r) => { const tid = r.team?.id || r.team_id; allTeamTotals[tid] = (allTeamTotals[tid] || 0) + (Number(r.computed_points) || 0); });
+            const sorted = Object.entries(allTeamTotals).sort((a, b) => b[1] - a[1]);
+            let rank = 1;
+            for (let i = 0; i < sorted.length; i++) {
+              if (i > 0 && sorted[i][1] < sorted[i - 1][1]) rank = i + 1;
+              if (sorted[i][0] === team.id) { fieldRankText = `Puesto ${rank} de ${sorted.length}`; break; }
+            }
+            if (fieldRankText) {
+              doc.setFont("helvetica", "bold"); doc.setFontSize(9); doc.setTextColor(34, 120, 60);
+              doc.text(`Ranking en pruebas de campo: ${fieldRankText}`, margin, y); y += 8;
+            }
+          }
+        }
+      }
+    } catch { /* silencioso si no hay campo */ }
+
     // ── Resultado final destacado ─────────────────────────────
     if (y > 260) { doc.addPage(); y = 20; }
     doc.setFillColor(30, 50, 120);
     doc.roundedRect(margin, y, pageW - margin * 2, 20, 4, 4, "F");
     doc.setFont("helvetica", "bold"); doc.setFontSize(11); doc.setTextColor(255, 255, 255);
     doc.text(
-      `Promedio final: ${fmtScore(teamAvg)}  →  ${lvl}  (Calificación: ${eq ? fmtScore(eq) : "—"})`,
+      `Promedio sustentación: ${fmtScore(teamAvg)}  →  ${lvl}  (Calificación: ${eq ? fmtScore(eq) : "—"})`,
       pageW / 2, y + 12, { align: "center" }
     );
     y += 28;
