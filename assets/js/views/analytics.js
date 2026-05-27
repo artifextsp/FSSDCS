@@ -1315,34 +1315,34 @@ export async function generateTeamPDF(opts) {
 
     // ── Puntajes de pruebas de campo ──────────────────────────
     let fieldRankText = "";
+    let fieldRankPos = null;
+    let totalCampo = 0;
     try {
-      const { listFieldResultsByCompetition, listFieldCompetitions, listFieldRounds } = await import("../data.js?v=19");
+      const { listFieldResultsByCompetition, listFieldRounds } = await import("../data.js?v=19");
       const { supabase } = await import("../supabase.js?v=19");
-      // Buscar competencia del proyecto (múltiples formas de obtener project_id)
       let projId = opts.proj?.id || opts.rpcData?.team?.project_id || team.project_id;
-      // Si no tenemos projId, lo buscamos a partir del team_id
       if (!projId && team.id) {
         const { data: teamRow } = await supabase.from("teams").select("project_id").eq("id", team.id).maybeSingle();
         if (teamRow) projId = teamRow.project_id;
       }
       if (projId) {
-        const { data: fcomps } = await supabase.from("field_competitions").select("id, competition_type, config").eq("project_id", projId).limit(1);
+        const { data: fcomps } = await supabase.from("field_competitions").select("id, competition_type, config, project:projects(name)").eq("project_id", projId).limit(1);
         if (fcomps?.length) {
           const fc = fcomps[0];
           const rounds = await listFieldRounds(fc.id);
           const results = await listFieldResultsByCompetition(fc.id);
           const myResults = results.filter((r) => (r.team?.id || r.team_id) === team.id);
 
-          if (myResults.length) {
-            if (y > 240) { doc.addPage(); y = 20; }
-            pdfSectionTitle(doc, "Puntajes de pruebas de campo", margin, y); y += 3;
+          if (myResults.length || rounds.length) {
+            if (y > 220) { doc.addPage(); y = 20; }
+            pdfSectionTitle(doc, "Fase 2: Pruebas de Campo", margin, y); y += 3;
 
             const roundRows = rounds.map((rd) => {
               const res = myResults.find((r) => (r.round?.id || r.round_id) === rd.id);
               return [rd.label || `Ronda ${rd.round_number}`, res ? String(res.raw_value ?? "—") : "—", res ? `${res.computed_points} pts` : "0 pts"];
             });
-            const totalCampo = myResults.reduce((s, r) => s + (Number(r.computed_points) || 0), 0);
-            roundRows.push(["TOTAL CAMPO", "", `${totalCampo} pts`]);
+            totalCampo = myResults.reduce((s, r) => s + (Number(r.computed_points) || 0), 0);
+            roundRows.push(["TOTAL CAMPO", "", { content: `${totalCampo} pts`, styles: { fontStyle: "bold" } }]);
 
             doc.autoTable({
               startY: y, head: [["Ronda", "Valor registrado", "Puntos obtenidos"]], body: roundRows,
@@ -1354,41 +1354,63 @@ export async function generateTeamPDF(opts) {
             });
             y = doc.lastAutoTable.finalY + 6;
 
-            // Ranking del equipo
+            // Ranking del equipo en campo
             const allTeamTotals = {};
             results.forEach((r) => { const tid = r.team?.id || r.team_id; allTeamTotals[tid] = (allTeamTotals[tid] || 0) + (Number(r.computed_points) || 0); });
             const sorted = Object.entries(allTeamTotals).sort((a, b) => b[1] - a[1]);
             let rank = 1;
             for (let i = 0; i < sorted.length; i++) {
               if (i > 0 && sorted[i][1] < sorted[i - 1][1]) rank = i + 1;
-              if (sorted[i][0] === team.id) { fieldRankText = `Puesto ${rank} de ${sorted.length}`; break; }
+              if (sorted[i][0] === team.id) { fieldRankPos = rank; fieldRankText = `Puesto ${rank} de ${sorted.length} equipos`; break; }
             }
             if (fieldRankText) {
-              doc.setFont("helvetica", "bold"); doc.setFontSize(9); doc.setTextColor(34, 120, 60);
-              doc.text(`Ranking en pruebas de campo: ${fieldRankText}`, margin, y); y += 8;
+              doc.setFillColor(34, 120, 60);
+              doc.roundedRect(margin, y, pageW - margin * 2, 14, 3, 3, "F");
+              doc.setFont("helvetica", "bold"); doc.setFontSize(10); doc.setTextColor(255, 255, 255);
+              doc.text(`Ranking pruebas de campo: ${fieldRankText}`, pageW / 2, y + 9, { align: "center" });
+              y += 20;
             }
           }
         }
       }
-    } catch { /* silencioso si no hay campo */ }
+    } catch (e) { console.error("[PDF] campo section error", e); }
 
     // ── Resultado final destacado ─────────────────────────────
-    if (y > 260) { doc.addPage(); y = 20; }
+    if (y > 250) { doc.addPage(); y = 20; }
     doc.setFillColor(30, 50, 120);
-    doc.roundedRect(margin, y, pageW - margin * 2, 20, 4, 4, "F");
-    doc.setFont("helvetica", "bold"); doc.setFontSize(11); doc.setTextColor(255, 255, 255);
-    doc.text(
-      `Promedio sustentación: ${fmtScore(teamAvg)}  →  ${lvl}  (Calificación: ${eq ? fmtScore(eq) : "—"})`,
-      pageW / 2, y + 12, { align: "center" }
-    );
-    y += 28;
+    doc.roundedRect(margin, y, pageW - margin * 2, 24, 4, 4, "F");
+    doc.setFont("helvetica", "bold"); doc.setFontSize(10); doc.setTextColor(255, 255, 255);
+    doc.text(`Sustentación: ${fmtScore(teamAvg)} → ${lvl}`, margin + 8, y + 9);
+    if (totalCampo > 0) doc.text(`Campo: ${totalCampo} pts`, margin + 8, y + 18);
+    const grandTotal = (teamAvg || 0) + totalCampo;
+    doc.text(`TOTAL COMBINADO: ${fmtScore(grandTotal)}`, pageW - margin - 8, y + 14, { align: "right" });
+    y += 32;
+
+    // ── Felicitación top 4 ──────────────────────────────────────
+    if (fieldRankPos && fieldRankPos <= 4) {
+      if (y > 240) { doc.addPage(); y = 20; }
+      doc.setFillColor(255, 215, 0);
+      doc.roundedRect(margin, y, pageW - margin * 2, 30, 4, 4, "F");
+      doc.setFont("helvetica", "bold"); doc.setFontSize(13); doc.setTextColor(30, 30, 30);
+      doc.text("¡FELICITACIONES!", pageW / 2, y + 11, { align: "center" });
+      doc.setFontSize(9); doc.setFont("helvetica", "normal");
+      doc.text(
+        `El equipo "${team.name}" obtuvo el puesto #${fieldRankPos} en la competencia de campo.`,
+        pageW / 2, y + 19, { align: "center" }
+      );
+      doc.text(
+        "Este reconocimiento certifica su destacada participación en la Feria STEAM.",
+        pageW / 2, y + 25, { align: "center" }
+      );
+      y += 38;
+    }
 
     // ── Observaciones / feedback (jurado anónimo) ─────────────
     const evalsWithObs = scored.filter((ev) =>
       (answersByEval[ev.id] || []).some((a) => a.observation?.trim())
     );
     if (evalsWithObs.length) {
-      if (y > 240) { doc.addPage(); y = 20; }
+      if (y > 220) { doc.addPage(); y = 20; }
       pdfSectionTitle(doc, "Observaciones y feedback de los evaluadores", margin, y); y += 3;
       doc.autoTable({
         startY: y,
@@ -1406,7 +1428,44 @@ export async function generateTeamPDF(opts) {
         columnStyles: { 0: { cellWidth: 26 }, 1: { cellWidth: 20, halign: "center" }, 2: { cellWidth: "auto" } },
         margin: { left: margin, right: margin }, theme: "striped",
       });
+      y = doc.lastAutoTable.finalY + 8;
     }
+
+    // ── Fotografías del equipo ───────────────────────────────────
+    try {
+      const { listTeamPhotos, signedPhotoUrl } = await import("../data.js?v=19");
+      const photos = await listTeamPhotos(team.id);
+      if (photos.length) {
+        if (y > 180) { doc.addPage(); y = 20; }
+        pdfSectionTitle(doc, "Fotografías del equipo", margin, y); y += 5;
+
+        const imgW = 55;
+        const imgH = 42;
+        const gap = 5;
+        const cols = Math.floor((pageW - margin * 2 + gap) / (imgW + gap));
+        let col = 0;
+
+        for (const photo of photos.slice(0, 6)) {
+          try {
+            const url = await signedPhotoUrl(photo.storage_path, 300);
+            const response = await fetch(url);
+            const blob = await response.blob();
+            const dataUrl = await new Promise((res) => {
+              const reader = new FileReader();
+              reader.onloadend = () => res(reader.result);
+              reader.readAsDataURL(blob);
+            });
+
+            if (y + imgH > doc.internal.pageSize.getHeight() - 20) { doc.addPage(); y = 20; col = 0; }
+            const x = margin + col * (imgW + gap);
+            doc.addImage(dataUrl, "JPEG", x, y, imgW, imgH);
+            col++;
+            if (col >= cols) { col = 0; y += imgH + gap; }
+          } catch { /* skip foto que falle */ }
+        }
+        if (col > 0) y += imgH + gap;
+      }
+    } catch { /* silencioso */ }
 
     pdfFooter(doc, pageW);
     const safeName = team.name.toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-+|-+$/, "");
