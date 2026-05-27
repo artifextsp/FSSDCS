@@ -21,13 +21,12 @@ const PALETTE = [
 ];
 
 // ─── Escala de equivalencia académica ────────────────────────────
-const SCALE_KEY = "feria-steam-grade-scale";
+const SCALE_KEY = "feria-steam-grade-scale-v2";
 const DEFAULT_SCALE = [
   { min: 0,   max: 2.0, label: "Bajo",     equivalent: 2.0 },
   { min: 2.1, max: 3.0, label: "Básico",   equivalent: 3.0 },
-  { min: 3.1, max: 3.9, label: "Alto",     equivalent: 3.9 },
-  { min: 4.0, max: 4.5, label: "Alto",     equivalent: 4.5 },
-  { min: 4.6, max: 5.0, label: "Superior", equivalent: 5.0 },
+  { min: 3.1, max: 4.0, label: "Alto",     equivalent: 4.0 },
+  { min: 4.1, max: 5.0, label: "Superior", equivalent: 5.0 },
 ];
 
 function loadScale() {
@@ -1319,8 +1318,13 @@ export async function generateTeamPDF(opts) {
     try {
       const { listFieldResultsByCompetition, listFieldCompetitions, listFieldRounds } = await import("../data.js?v=19");
       const { supabase } = await import("../supabase.js?v=19");
-      // Buscar competencia del proyecto
-      const projId = opts.proj?.id || opts.rpcData?.team?.project_id || team.project_id;
+      // Buscar competencia del proyecto (múltiples formas de obtener project_id)
+      let projId = opts.proj?.id || opts.rpcData?.team?.project_id || team.project_id;
+      // Si no tenemos projId, lo buscamos a partir del team_id
+      if (!projId && team.id) {
+        const { data: teamRow } = await supabase.from("teams").select("project_id").eq("id", team.id).maybeSingle();
+        if (teamRow) projId = teamRow.project_id;
+      }
       if (projId) {
         const { data: fcomps } = await supabase.from("field_competitions").select("id, competition_type, config").eq("project_id", projId).limit(1);
         if (fcomps?.length) {

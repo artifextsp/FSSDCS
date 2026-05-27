@@ -863,13 +863,25 @@ export async function listFieldResults(roundId) {
 }
 
 export async function listFieldResultsByCompetition(competitionId) {
+  const { data: rounds, error: rErr } = await supabase
+    .from("field_rounds")
+    .select("id, round_number")
+    .eq("competition_id", competitionId)
+    .order("round_number", { ascending: true });
+  if (rErr) throw rErr;
+  if (!rounds?.length) return [];
+
+  const roundIds = rounds.map((r) => r.id);
   const { data, error } = await supabase
     .from("field_results")
-    .select("*, team:teams(id, name), round:field_rounds!inner(id, round_number, competition_id)")
-    .eq("round.competition_id", competitionId)
+    .select("*, team:teams(id, name)")
+    .in("round_id", roundIds)
     .order("created_at", { ascending: true });
   if (error) throw error;
-  return data ?? [];
+
+  // Enriquecer cada resultado con la info de su ronda
+  const roundMap = Object.fromEntries(rounds.map((r) => [r.id, r]));
+  return (data ?? []).map((r) => ({ ...r, round: roundMap[r.round_id] || { id: r.round_id, round_number: null } }));
 }
 
 export async function upsertFieldResult({ roundId, teamId, rawValue, computedPoints, meta }) {
