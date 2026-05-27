@@ -5,6 +5,9 @@ import {
   listFieldCompetitions, createFieldCompetition, updateFieldCompetition, deleteFieldCompetition,
 } from "../data.js?v=19";
 
+// Cache de conteo de equipos por proyecto
+const teamCountCache = {};
+
 /* ================================================================
    Admin: Pruebas de Campo – Configurar competencias y asignar jueces
    ================================================================ */
@@ -42,6 +45,12 @@ export async function renderFieldAdmin(body) {
       listEvaluators(ed.id),
       listFieldCompetitions(ed.id),
     ]);
+    // Pre-cargar conteo de equipos
+    await Promise.all(projects.map(async (p) => {
+      if (!teamCountCache[p.id]) {
+        try { const t = await listTeamsByProject(p.id); teamCountCache[p.id] = t.length; } catch { teamCountCache[p.id] = 0; }
+      }
+    }));
   } catch (err) {
     clear(body);
     body.append(el("div", { class: "error-banner", text: "Error: " + (err?.message || err) }));
@@ -84,6 +93,7 @@ export async function renderFieldAdmin(body) {
   function competitionCard(comp) {
     const projName = comp.project?.name || "—";
     const judgeName = comp.evaluator?.profile?.display_name || "Sin asignar";
+    const teamsInComp = teamCountCache[comp.project_id] ?? "?";
     const statusColors = { setup: "var(--color-warning)", active: "var(--color-accent)", finished: "var(--color-text-muted)" };
     const statusLabels = { setup: "En configuración", active: "En curso", finished: "Finalizada" };
 
@@ -99,7 +109,7 @@ export async function renderFieldAdmin(body) {
           el("h3", { class: "card__title", style: "margin:0", text: projName }),
           el("p", { class: "text-muted", style: "margin:4px 0 0;font-size:0.85rem" }, [
             TYPE_LABELS[comp.competition_type] || comp.competition_type,
-            " · ",
+            ` · ${teamsInComp} equipos · `,
             el("span", { style: `color:${statusColors[comp.status]};font-weight:600`, text: statusLabels[comp.status] }),
           ]),
         ]),
@@ -195,6 +205,24 @@ export async function renderFieldAdmin(body) {
       projSelect.append(el("option", { value: p.id, text: p.name }))
     );
 
+    // Indicador de equipos
+    const teamInfoEl = el("div", {
+      style: "background:var(--color-surface-2);padding:var(--space-2) var(--space-3);border-radius:var(--radius-sm);margin-top:6px;font-size:0.85rem",
+    });
+    async function updateTeamInfo() {
+      const pid = projSelect.value;
+      if (!pid) { teamInfoEl.textContent = ""; return; }
+      if (!teamCountCache[pid]) {
+        try { const t = await listTeamsByProject(pid); teamCountCache[pid] = t.length; }
+        catch { teamCountCache[pid] = 0; }
+      }
+      teamInfoEl.innerHTML = "";
+      teamInfoEl.append(el("span", { style: "font-weight:600;color:var(--color-accent)", text: `${teamCountCache[pid]} equipos` }));
+      teamInfoEl.append(el("span", { class: "text-muted", text: " participan en este proyecto" }));
+    }
+    projSelect.addEventListener("change", updateTeamInfo);
+    updateTeamInfo();
+
     const typeSelect = el("select", { class: "select" });
     Object.entries(TYPE_LABELS).forEach(([k, v]) =>
       typeSelect.append(el("option", { value: k, text: v }))
@@ -212,9 +240,10 @@ export async function renderFieldAdmin(body) {
     const result = await openModal({
       title: "Crear competencia de campo",
       body: el("div", {}, [
-        el("div", { class: "field" }, [el("label", { class: "field__label", text: "Proyecto" }), projSelect]),
+        el("div", { class: "field" }, [el("label", { class: "field__label", text: "Proyecto" }), projSelect, teamInfoEl]),
         el("div", { class: "field" }, [el("label", { class: "field__label", text: "Tipo de competencia" }), typeSelect, descEl]),
         el("div", { class: "field" }, [el("label", { class: "field__label", text: "Juez de campo (opcional)" }), judgeSelect]),
+        el("p", { class: "field__hint", style: "margin-top:var(--space-2)", text: "Después de crear, usa 'Editar' para configurar cuántos puestos puntúan y el valor de cada puesto." }),
       ]),
       actions: [
         { label: "Cancelar", onClick: () => null },
@@ -240,37 +269,131 @@ export async function renderFieldAdmin(body) {
 
   // ── Modal: editar competencia (tipo + config) ─────────────────
   async function openEditModal(comp) {
+    // Contar equipos del proyecto
+    let teamCount = teamCountCache[comp.project_id];
+    if (teamCount == null) {
+      try { const t = await listTeamsByProject(comp.project_id); teamCount = t.length; teamCountCache[comp.project_id] = teamCount; }
+      catch { teamCount = "?"; }
+    }
+
     const typeSelect = el("select", { class: "select" });
     Object.entries(TYPE_LABELS).forEach(([k, v]) =>
       typeSelect.append(el("option", { value: k, text: v, selected: k === comp.competition_type }))
     );
-
-    const configArea = el("textarea", {
-      class: "textarea",
-      style: "font-family:var(--font-mono);font-size:0.85rem;min-height:180px",
-      value: JSON.stringify(comp.config || {}, null, 2),
-    });
-
-    typeSelect.addEventListener("change", () => {
-      if (!configArea.value.trim() || configArea.value.trim() === "{}") {
-        configArea.value = JSON.stringify(getDefaultConfig(typeSelect.value), null, 2);
-      }
-    });
 
     const statusSelect = el("select", { class: "select" });
     ["setup", "active", "finished"].forEach((s) =>
       statusSelect.append(el("option", { value: s, text: s === "setup" ? "En configuración" : s === "active" ? "En curso" : "Finalizada", selected: s === comp.status }))
     );
 
+    // Sección visual de puntos por posición (para time_trial y timed_quantity)
+    const currentConfig = comp.config || {};
+    const isPositionBased = ["time_trial", "timed_quantity"].includes(comp.competition_type);
+    const positionsData = isPositionBased
+      ? (comp.competition_type === "time_trial" ? (currentConfig.positions || []) : (currentConfig.points_by_position || []).map((pts, i) => ({ place: i + 1, points: pts })))
+      : [];
+
+    const posContainer = el("div", { class: "field" });
+    const configArea = el("textarea", {
+      class: "textarea",
+      style: "font-family:var(--font-mono);font-size:0.85rem;min-height:120px",
+      value: JSON.stringify(currentConfig, null, 2),
+    });
+
+    function buildPositionEditor() {
+      clear(posContainer);
+      const cType = typeSelect.value;
+      if (!["time_trial", "timed_quantity"].includes(cType)) {
+        posContainer.style.display = "none";
+        return;
+      }
+      posContainer.style.display = "";
+
+      posContainer.append(
+        el("label", { class: "field__label", text: "Puestos que puntúan" }),
+        el("div", {
+          style: "background:var(--color-surface-2);padding:var(--space-3);border-radius:var(--radius-sm);margin-bottom:var(--space-2)",
+        }, [
+          el("p", { style: "margin:0 0 8px;font-weight:600;color:var(--color-accent)", text: `Este proyecto tiene ${teamCount} equipos participando` }),
+          el("p", { class: "text-muted", style: "margin:0;font-size:0.82rem", text: "Define cuántos puestos puntúan y el valor de cada puesto. Los puestos sin puntos asignados reciben 0." }),
+        ])
+      );
+
+      const posListEl = el("div", { class: "flex-col gap-2", style: "margin-top:var(--space-2)" });
+      posContainer.append(posListEl);
+
+      // Leer posiciones actuales del textarea
+      let parsed;
+      try { parsed = JSON.parse(configArea.value); } catch { parsed = currentConfig; }
+      let positions = [];
+      if (cType === "time_trial") positions = parsed.positions || [];
+      else positions = (parsed.points_by_position || []).map((pts, i) => ({ place: i + 1, points: pts }));
+
+      positions.forEach((pos, idx) => {
+        posListEl.append(buildPosRow(pos, idx));
+      });
+
+      // Botón agregar puesto
+      posContainer.append(el("button", {
+        class: "btn btn--ghost btn--sm mt-2",
+        text: "+ Agregar puesto",
+        onclick: () => {
+          const nextPlace = positions.length + 1;
+          positions.push({ place: nextPlace, points: 0 });
+          posListEl.append(buildPosRow(positions[positions.length - 1], positions.length - 1));
+          syncPosToConfig();
+        },
+      }));
+
+      function buildPosRow(pos, idx) {
+        const ptsInput = el("input", {
+          type: "number", min: "0", step: "1", class: "input", style: "width:80px",
+          value: String(pos.points),
+          onchange: (e) => { positions[idx].points = parseInt(e.target.value) || 0; syncPosToConfig(); },
+        });
+        const removeBtn = el("button", {
+          class: "btn btn--danger btn--sm", text: "✗",
+          onclick: () => { positions.splice(idx, 1); buildPositionEditor(); syncPosToConfig(); },
+        });
+        return el("div", { class: "flex items-center gap-2" }, [
+          el("span", { style: "width:40px;font-weight:600;font-size:0.9rem", text: `${pos.place}°` }),
+          ptsInput,
+          el("span", { class: "text-muted", style: "font-size:0.82rem", text: "puntos" }),
+          removeBtn,
+        ]);
+      }
+
+      function syncPosToConfig() {
+        let parsed;
+        try { parsed = JSON.parse(configArea.value); } catch { parsed = {}; }
+        if (cType === "time_trial") {
+          parsed.positions = positions.map((p, i) => ({ place: i + 1, points: p.points }));
+        } else {
+          parsed.points_by_position = positions.map((p) => p.points);
+        }
+        configArea.value = JSON.stringify(parsed, null, 2);
+      }
+    }
+
+    typeSelect.addEventListener("change", () => {
+      if (!configArea.value.trim() || configArea.value.trim() === "{}") {
+        configArea.value = JSON.stringify(getDefaultConfig(typeSelect.value), null, 2);
+      }
+      buildPositionEditor();
+    });
+
+    buildPositionEditor();
+
     const result = await openModal({
       title: "Editar competencia",
       body: el("div", {}, [
         el("div", { class: "field" }, [el("label", { class: "field__label", text: "Tipo" }), typeSelect]),
         el("div", { class: "field" }, [el("label", { class: "field__label", text: "Estado" }), statusSelect]),
+        posContainer,
         el("div", { class: "field" }, [
-          el("label", { class: "field__label", text: "Configuración (JSON)" }),
+          el("label", { class: "field__label", text: "Configuración avanzada (JSON)" }),
           configArea,
-          el("span", { class: "field__hint", text: "Define puntos por posición, criterios, reglas de victoria, etc." }),
+          el("span", { class: "field__hint", text: "Edita directamente si necesitas configurar criterios, reglas de combate, etc." }),
         ]),
       ]),
       actions: [

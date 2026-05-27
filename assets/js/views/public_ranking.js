@@ -2,6 +2,7 @@ import { clear, el, fmtScore } from "../utils.js?v=19";
 import { getCurrentEdition } from "../state.js?v=19";
 import { listRanking, listFieldCompetitions, listFieldResultsByCompetition } from "../data.js?v=19";
 import { subscribeTable } from "../realtime.js?v=19";
+import { supabase } from "../supabase.js?v=19";
 
 const TYPE_LABELS = {
   time_trial: "Prueba de tiempo",
@@ -128,13 +129,25 @@ export async function renderRanking() {
       try {
         const results = await listFieldResultsByCompetition(compId);
         clear(detail);
-        paintFieldComp(detail, fieldComps.find((c) => c.id === compId), results);
+        await paintFieldComp(detail, fieldComps.find((c) => c.id === compId), results);
       } catch (err) { clear(detail); detail.append(el("div", { class: "error-banner", text: err?.message })); }
     }
   }
 
-  function paintFieldComp(container, comp, results) {
+  async function paintFieldComp(container, comp, results) {
     if (!comp) return;
+
+    // Traer scores de team_score_cache para incluir sustentación
+    let cacheRows = [];
+    try {
+      const { data } = await supabase
+        .from("team_score_cache")
+        .select("team_id, sustentation_avg, field_contest_avg, total_score")
+        .eq("edition_id", edition.id);
+      cacheRows = data ?? [];
+    } catch {}
+    const cacheByTeam = {};
+    cacheRows.forEach((r) => { cacheByTeam[r.team_id] = r; });
 
     // Acumular por equipo
     const totals = {};
@@ -144,10 +157,15 @@ export async function renderRanking() {
       if (!totals[tid]) totals[tid] = { name, pts: 0, rounds: {} };
       totals[tid].pts += Number(r.computed_points) || 0;
       const rn = r.round?.round_number ?? "?";
-      totals[tid].rounds[rn] = Number(r.computed_points) || 0;
+      totals[tid].rounds[rn] = (totals[tid].rounds[rn] || 0) + (Number(r.computed_points) || 0);
     });
 
-    const sorted = Object.entries(totals).sort((a, b) => b[1].pts - a[1].pts);
+    // Ordenar por total combinado (sustentación + campo)
+    const sorted = Object.entries(totals).sort((a, b) => {
+      const totalA = (cacheByTeam[a[0]]?.total_score ?? a[1].pts);
+      const totalB = (cacheByTeam[b[0]]?.total_score ?? b[1].pts);
+      return totalB - totalA;
+    });
     if (!sorted.length) { container.append(el("div", { class: "empty", text: "Sin resultados aún." })); return; }
 
     // Obtener rondas únicas
@@ -156,24 +174,32 @@ export async function renderRanking() {
     // Header
     const headerRow = el("div", {
       class: "flex",
-      style: "font-size:0.75rem;text-transform:uppercase;letter-spacing:.04em;color:var(--color-text-muted);padding:var(--space-2);gap:var(--space-2);border-bottom:2px solid var(--color-border)",
+      style: "font-size:0.72rem;text-transform:uppercase;letter-spacing:.04em;color:var(--color-text-muted);padding:var(--space-2);gap:var(--space-2);border-bottom:2px solid var(--color-border)",
     }, [
-      el("span", { style: "width:30px;text-align:center", text: "#" }),
+      el("span", { style: "width:28px;text-align:center", text: "#" }),
       el("span", { style: "flex:1", text: "Equipo" }),
-      ...roundNums.map((n) => el("span", { style: "width:45px;text-align:center", text: `R${n}` })),
-      el("span", { style: "width:55px;text-align:center;font-weight:700", text: "Total" }),
+      el("span", { style: "width:40px;text-align:center", text: "S" }),
+      ...roundNums.map((n) => el("span", { style: "width:38px;text-align:center", text: `R${n}` })),
+      el("span", { style: "width:42px;text-align:center", text: "Camp" }),
+      el("span", { style: "width:50px;text-align:center;font-weight:700", text: "Total" }),
     ]);
     container.append(headerRow);
 
     sorted.forEach(([tid, data], idx) => {
+      const cache = cacheByTeam[tid];
+      const sustAvg = cache?.sustentation_avg ?? 0;
+      const totalCombined = cache?.total_score ?? (sustAvg + data.pts);
+
       const row = el("div", {
         class: "flex items-center",
         style: `padding:var(--space-2);gap:var(--space-2);border-bottom:1px solid var(--color-border);${idx < 3 ? "background:var(--color-surface-2)" : ""}`,
       }, [
-        el("span", { style: "width:30px;text-align:center;font-weight:700", text: `${idx + 1}` }),
+        el("span", { style: "width:28px;text-align:center;font-weight:700", text: `${idx + 1}` }),
         el("span", { style: "flex:1;font-weight:500", text: data.name }),
-        ...roundNums.map((n) => el("span", { style: "width:45px;text-align:center;font-size:0.85rem", text: data.rounds[n] != null ? String(data.rounds[n]) : "—" })),
-        el("span", { style: "width:55px;text-align:center;font-weight:700;color:var(--color-accent)", text: String(data.pts) }),
+        el("span", { style: "width:40px;text-align:center;font-size:0.82rem;color:var(--color-text-muted)", text: fmtScore(sustAvg) }),
+        ...roundNums.map((n) => el("span", { style: "width:38px;text-align:center;font-size:0.82rem", text: data.rounds[n] != null ? String(data.rounds[n]) : "—" })),
+        el("span", { style: "width:42px;text-align:center;font-size:0.82rem", text: String(data.pts) }),
+        el("span", { style: "width:50px;text-align:center;font-weight:700;color:var(--color-accent)", text: fmtScore(totalCombined) }),
       ]);
       container.append(row);
     });
