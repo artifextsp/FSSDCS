@@ -530,22 +530,20 @@ async function generateJudgePDF(btn, comp) {
     const typeName = TYPE_LABELS[comp.competition_type] || comp.competition_type;
     const config = comp.config || {};
 
-    // ── Encabezado ──
     doc.setFontSize(18);
     doc.setFont(undefined, "bold");
-    doc.text("FERIA STEAM – Prueba de Campo", pageW / 2, y, { align: "center" });
+    doc.text("FERIA STEAM - Prueba de Campo", pageW / 2, y, { align: "center" });
     y += 10;
     doc.setFontSize(14);
     doc.text(projName.toUpperCase(), pageW / 2, y, { align: "center" });
     y += 8;
     doc.setFontSize(10);
     doc.setFont(undefined, "normal");
-    doc.text(`Tipo: ${typeName}`, pageW / 2, y, { align: "center" });
+    doc.text("Tipo: " + typeName, pageW / 2, y, { align: "center" });
     y += 6;
-    doc.text(`Equipos participantes: ${teams.length}`, pageW / 2, y, { align: "center" });
+    doc.text("Equipos participantes: " + teams.length, pageW / 2, y, { align: "center" });
     y += 10;
 
-    // ── Descripción del tipo ──
     doc.setDrawColor(34, 197, 94);
     doc.setLineWidth(0.5);
     doc.line(margin, y, pageW - margin, y);
@@ -553,36 +551,44 @@ async function generateJudgePDF(btn, comp) {
 
     doc.setFontSize(11);
     doc.setFont(undefined, "bold");
-    doc.text("DESCRIPCIÓN DE LA COMPETENCIA", margin, y);
+    doc.text("DESCRIPCION DE LA COMPETENCIA", margin, y);
     y += 6;
     doc.setFont(undefined, "normal");
     doc.setFontSize(10);
 
-    const desc = TYPE_DESCRIPTIONS[comp.competition_type] || "Competencia de campo.";
+    const PDF_DESCRIPTIONS = {
+      time_trial: "Menor tiempo gana mejor posicion y obtiene mas puntos (ej. seguidor de linea)",
+      performance: "Puntos acumulables por eventos/criterios logrados (ej. performance musical)",
+      combat: "Victoria/empate/derrota entre pares de equipos (ej. sumo)",
+      elimination: "Rondas progresivas, equipos eliminados conservan sus puntos (ej. canicas modalidad 1)",
+      timed_quantity: "Mover N objetos en menor tiempo, varias rondas (ej. canicas modalidad 2)",
+    };
+    const desc = PDF_DESCRIPTIONS[comp.competition_type] || "Competencia de campo.";
     const descLines = doc.splitTextToSize(desc, pageW - margin * 2);
     doc.text(descLines, margin, y);
     y += descLines.length * 5 + 4;
 
-    // ── Sistema de puntuación ──
+    // ── Sistema de puntuacion ──
     doc.setFontSize(11);
     doc.setFont(undefined, "bold");
-    doc.text("SISTEMA DE PUNTUACIÓN", margin, y);
+    doc.text("SISTEMA DE PUNTUACION", margin, y);
     y += 6;
     doc.setFont(undefined, "normal");
     doc.setFontSize(10);
 
+    const contentW = pageW - margin * 2;
+
     if (comp.competition_type === "time_trial") {
-      doc.text("Se registra el tiempo de cada equipo. Menor tiempo = mejor posición.", margin, y);
-      y += 5;
-      doc.text("Puntos por posición:", margin, y);
-      y += 5;
+      const ttDesc = doc.splitTextToSize("Se registra el tiempo de cada equipo. Menor tiempo = mejor posicion. Puntos por posicion:", contentW);
+      doc.text(ttDesc, margin, y);
+      y += ttDesc.length * 5;
       const positions = config.positions || [];
       if (positions.length) {
         doc.autoTable({
           startY: y,
           margin: { left: margin, right: margin },
-          head: [["Posición", "Puntos"]],
-          body: positions.map((p) => [`${p.place}°`, `${p.points} pts`]),
+          head: [["Posicion", "Puntos"]],
+          body: positions.map((p) => [p.place + "o.", p.points + " pts"]),
           styles: { fontSize: 9 },
           headStyles: { fillColor: [34, 197, 94] },
         });
@@ -591,8 +597,9 @@ async function generateJudgePDF(btn, comp) {
       if (config.unit) { doc.text(`Unidad de medida: ${config.unit === "seconds" ? "segundos" : config.unit}`, margin, y); y += 5; }
 
     } else if (comp.competition_type === "performance") {
-      doc.text("Se marcan los criterios/eventos logrados por cada equipo. Los puntos se suman.", margin, y);
-      y += 5;
+      const perfDesc = doc.splitTextToSize("Se marcan los criterios/eventos logrados por cada equipo. Los puntos se suman.", contentW);
+      doc.text(perfDesc, margin, y);
+      y += perfDesc.length * 5;
       const events = config.events || [];
       if (events.length) {
         doc.autoTable({
@@ -605,12 +612,14 @@ async function generateJudgePDF(btn, comp) {
         });
         y = doc.lastAutoTable.finalY + 6;
       }
-      doc.text("El juez marca con ✓ cada criterio logrado por ronda. Los puntos se acumulan entre rondas.", margin, y);
-      y += 5;
+      const perfNote = doc.splitTextToSize("El juez marca cada criterio logrado por ronda. Los puntos se acumulan entre rondas.", pageW - margin * 2);
+      doc.text(perfNote, margin, y);
+      y += perfNote.length * 5;
 
     } else if (comp.competition_type === "combat") {
-      doc.text("Se registran combates entre pares de equipos.", margin, y);
-      y += 5;
+      const combatDesc = doc.splitTextToSize("Se registran combates entre pares de equipos.", contentW);
+      doc.text(combatDesc, margin, y);
+      y += combatDesc.length * 5;
       doc.autoTable({
         startY: y,
         margin: { left: margin, right: margin },
@@ -626,21 +635,23 @@ async function generateJudgePDF(btn, comp) {
       y = doc.lastAutoTable.finalY + 6;
 
     } else if (comp.competition_type === "elimination") {
-      doc.text("Rondas eliminatorias progresivas. Equipos acumulan puntos por ronda superada.", margin, y);
-      y += 5;
+      const elimDesc = doc.splitTextToSize("Rondas eliminatorias progresivas. Equipos acumulan puntos por ronda superada.", contentW);
+      doc.text(elimDesc, margin, y);
+      y += elimDesc.length * 5;
       doc.text(`Puntos por ronda superada: ${config.points_per_round_survived ?? 2} pts`, margin, y);
       y += 5;
 
     } else if (comp.competition_type === "timed_quantity") {
-      doc.text(`Se mide el tiempo para mover ${config.quantity || "N"} objetos. Menor tiempo = mejor posición.`, margin, y);
-      y += 5;
+      const tqDesc = doc.splitTextToSize(`Se mide el tiempo para mover ${config.quantity || "N"} objetos. Menor tiempo = mejor posicion.`, contentW);
+      doc.text(tqDesc, margin, y);
+      y += tqDesc.length * 5;
       const pts = config.points_by_position || [];
       if (pts.length) {
         doc.autoTable({
           startY: y,
           margin: { left: margin, right: margin },
-          head: [["Posición", "Puntos"]],
-          body: pts.map((p, i) => [`${i + 1}°`, `${p} pts`]),
+          head: [["Posicion", "Puntos"]],
+          body: pts.map((p, i) => [(i + 1) + "o.", p + " pts"]),
           styles: { fontSize: 9 },
           headStyles: { fillColor: [34, 197, 94] },
         });
@@ -665,7 +676,7 @@ async function generateJudgePDF(btn, comp) {
         y += 5;
       });
     } else {
-      doc.text("Sin jueces asignados aún.", margin + 4, y);
+      doc.text("Sin jueces asignados.", margin + 4, y);
       y += 5;
     }
 
@@ -674,7 +685,7 @@ async function generateJudgePDF(btn, comp) {
     if (y > 230) { doc.addPage(); y = 20; }
     doc.setFontSize(11);
     doc.setFont(undefined, "bold");
-    doc.text("EQUIPOS PARTICIPANTES (Orden de presentación)", margin, y);
+    doc.text("EQUIPOS PARTICIPANTES (Orden de presentacion)", margin, y);
     y += 6;
 
     if (teams.length) {
@@ -682,7 +693,7 @@ async function generateJudgePDF(btn, comp) {
         startY: y,
         margin: { left: margin, right: margin },
         head: [["#", "Equipo", "Grado"]],
-        body: teams.map((t, i) => [i + 1, t.name, t.grade_label || "—"]),
+        body: teams.map((t, i) => [i + 1, t.name, t.grade_label || "-"]),
         styles: { fontSize: 9 },
         headStyles: { fillColor: [34, 197, 94] },
       });
@@ -699,15 +710,20 @@ async function generateJudgePDF(btn, comp) {
     doc.setFontSize(9);
 
     const instructions = [
-      "1. Ingrese a la plataforma con su correo y contraseña asignados.",
-      "2. En el Panel jurado, busque la sección '🏁 Pruebas de campo' y seleccione esta competencia.",
-      "3. Cree rondas con el botón '+ Nueva ronda' según avance la competencia.",
+      "1. Ingrese a la plataforma con su correo y password asignados.",
+      "2. En el Panel jurado, busque la seccion 'Pruebas de campo' y seleccione esta competencia.",
+      "3. Cree rondas con el boton '+ Nueva ronda' segun avance la competencia.",
       "4. Registre los resultados de cada equipo en la ronda activa.",
-      "5. Los cálculos de ranking se actualizan automáticamente en tiempo real.",
-      "6. Puede subir fotos de los equipos desde la sección inferior de la pantalla.",
+      "5. Los calculos de ranking se actualizan automaticamente en tiempo real.",
+      "6. Puede subir fotos de los equipos desde la seccion inferior de la pantalla.",
       "7. Si tiene dudas, consulte al administrador.",
     ];
-    instructions.forEach((line) => { doc.text(line, margin, y); y += 4.5; });
+    const maxW = pageW - margin * 2;
+    instructions.forEach((line) => {
+      const wrapped = doc.splitTextToSize(line, maxW);
+      doc.text(wrapped, margin, y);
+      y += wrapped.length * 4.5;
+    });
 
     // ── Pie de página ──
     const totalPages = doc.internal.getNumberOfPages();
@@ -715,8 +731,8 @@ async function generateJudgePDF(btn, comp) {
       doc.setPage(i);
       doc.setFontSize(8);
       doc.setTextColor(150);
-      doc.text(`Feria STEAM ${new Date().getFullYear()} – Documento generado automáticamente`, pageW / 2, 287, { align: "center" });
-      doc.text(`Página ${i} de ${totalPages}`, pageW - margin, 287, { align: "right" });
+      doc.text("Feria STEAM " + new Date().getFullYear() + " - Documento generado automaticamente", pageW / 2, 287, { align: "center" });
+      doc.text("Pagina " + i + " de " + totalPages, pageW - margin, 287, { align: "right" });
       doc.setTextColor(0);
     }
 
