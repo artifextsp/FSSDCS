@@ -516,7 +516,7 @@ export async function resolveDocUrl(doc) {
 export async function listEvaluators(editionId) {
   const { data, error } = await supabase
     .from("evaluators")
-    .select("id, user_id, active, profile:profiles(display_name, role)")
+    .select("id, user_id, active, profile:profiles(display_name, role, email)")
     .eq("edition_id", editionId)
     .order("created_at", { ascending: true });
   if (error) throw error;
@@ -628,6 +628,33 @@ export async function adminResetEvaluatorPassword(userId, newPassword) {
     if (code === "forbidden") throw new Error("No tienes permisos para hacer esto.");
     throw new Error("No se pudo cambiar la contraseña: " + code);
   }
+  return true;
+}
+
+export async function adminUpdateEvaluatorEmail(userId, newEmail) {
+  if (!userId) throw new Error("Falta el usuario.");
+  if (!newEmail || !newEmail.includes("@")) throw new Error("Correo inválido.");
+  const session = (await supabase.auth.getSession())?.data?.session;
+  const accessToken = session?.access_token;
+  if (!accessToken) throw new Error("Tu sesión expiró. Vuelve a iniciar sesión.");
+  const url = `${SUPABASE_URL}/functions/v1/reset-evaluator-password`;
+  const res = await fetch(url, {
+    method: "POST",
+    headers: {
+      "Content-Type": "application/json",
+      apikey: SUPABASE_KEY,
+      Authorization: `Bearer ${accessToken}`,
+    },
+    body: JSON.stringify({ userId, email: newEmail.trim().toLowerCase() }),
+  });
+  const body = await res.json().catch(() => null);
+  if (!res.ok || !body?.ok) {
+    const code = body?.error || `http_${res.status}`;
+    if (code === "forbidden") throw new Error("No tienes permisos para hacer esto.");
+    throw new Error("No se pudo cambiar el correo: " + code);
+  }
+  // Actualizar profiles.email localmente
+  await supabase.from("profiles").update({ email: newEmail.trim().toLowerCase() }).eq("user_id", userId);
   return true;
 }
 

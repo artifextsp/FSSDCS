@@ -7,7 +7,7 @@ import {
   listTeamsByProject, getTeamFull, createTeam, updateTeam, deleteTeam,
   replaceTeamMembers, listTeamMembers,
   listEvaluators, setAssignment, listAssignmentsForEdition,
-  createEvaluatorAccount, updateEvaluatorProfile, adminResetEvaluatorPassword,
+  createEvaluatorAccount, updateEvaluatorProfile, adminResetEvaluatorPassword, adminUpdateEvaluatorEmail,
   listConfigs, upsertActiveConfig,
   uploadProjectDocument, addProjectLink, deleteProjectDocument, resolveDocUrl,
   uploadTeamPhoto, deleteTeamPhoto, signedPhotoUrl, listTeamPhotos,
@@ -1036,11 +1036,12 @@ async function renderEvaluatorsAdmin(body) {
     el("div", { class: "flex items-center justify-between gap-3", style: { flexWrap: "wrap" } }, [
       el("div", {}, [
         el("strong", { text: ev.profile?.display_name || "Jurado sin nombre" }),
-        el("div", { class: "text-muted", style: { fontSize: "0.85rem" }, text: ev.active ? "Activo" : "Inactivo" }),
+        el("div", { class: "text-muted", style: { fontSize: "0.85rem" }, text: ev.profile?.email || "Sin correo" }),
+        el("div", { class: "text-muted", style: { fontSize: "0.78rem" }, text: ev.active ? "Activo" : "Inactivo" }),
       ]),
       el("div", { class: "btn-row", style: { flexWrap: "wrap" } }, [
         el("button", { class: "btn btn--ghost btn--sm", text: "Editar nombre", onclick: () => openEditName(ev) }),
-        el("button", { class: "btn btn--ghost btn--sm", text: "Cambiar contraseña", onclick: () => openResetPassword(ev) }),
+        el("button", { class: "btn btn--ghost btn--sm", text: "Credenciales", onclick: () => openResetPassword(ev) }),
         el("button", { class: "btn btn--ghost btn--sm", text: ev.active ? "Desactivar" : "Activar", onclick: async () => {
           const { error } = await supabase.from("evaluators").update({ active: !ev.active }).eq("id", ev.id);
           if (error) toast("Error: " + error.message, "error"); else { toast("Actualizado", "success"); renderAdmin({ section: "jurados" }); }
@@ -1110,28 +1111,48 @@ async function renderEvaluatorsAdmin(body) {
   }
 
   async function openResetPassword(ev) {
+    const currentEmail = ev.profile?.email || "";
+    const emailEl = el("input", { class: "input", type: "email", value: currentEmail, autocomplete: "off", placeholder: "correo@ejemplo.com" });
     const passEl = el("input", { class: "input", type: "text", value: generatePassword(), autocomplete: "off" });
     const regenBtn = el("button", { class: "btn btn--ghost btn--sm", type: "button", text: "Generar otra", onclick: () => { passEl.value = generatePassword(); } });
     const r = await openModal({
-      title: "Cambiar contraseña",
+      title: "Credenciales del jurado",
       body: el("div", {}, [
         el("p", { class: "text-muted", style: { marginBottom: "var(--space-3)" }, text: `Jurado: ${ev.profile?.display_name || "—"}` }),
         el("div", { class: "field" }, [
+          el("label", { class: "field__label", text: "Correo (usuario de acceso)" }),
+          emailEl,
+          el("p", { class: "field__hint", text: "Si cambias el correo, el jurado usará el nuevo para ingresar." }),
+        ]),
+        el("div", { class: "field" }, [
           el("label", { class: "field__label", text: "Nueva contraseña" }),
           el("div", { class: "flex gap-2 items-center" }, [passEl, regenBtn]),
-          el("p", { class: "field__hint", text: "El jurado deberá cambiarla al iniciar sesión." }),
+          el("p", { class: "field__hint", text: "Déjala así para asignar esta nueva contraseña." }),
         ]),
       ]),
       actions: [
         { label: "Cancelar", onClick: () => null },
-        { label: "Cambiar contraseña", variant: "primary", onClick: async () => {
+        { label: "Guardar cambios", variant: "primary", onClick: async () => {
+          const newEmail = emailEl.value.trim().toLowerCase();
+          const emailChanged = newEmail && newEmail !== currentEmail.toLowerCase();
+          const msgs = [];
+          if (emailChanged) {
+            try {
+              await adminUpdateEvaluatorEmail(ev.user_id, newEmail);
+              msgs.push(`Correo: ${newEmail}`);
+            } catch (err) {
+              throw new Error("Error al cambiar correo: " + (err?.message || err));
+            }
+          }
           await adminResetEvaluatorPassword(ev.user_id, passEl.value);
-          return { password: passEl.value };
+          msgs.push(`Pass: ${passEl.value}`);
+          return { msgs };
         } },
       ],
     });
-    if (r?.password) {
-      toast(`Contraseña cambiada. Nueva: ${r.password}`, "success");
+    if (r?.msgs) {
+      toast(r.msgs.join(" · "), "success");
+      renderAdmin({ section: "jurados" });
     }
   }
 }
