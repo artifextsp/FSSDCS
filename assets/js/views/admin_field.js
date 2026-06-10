@@ -6,6 +6,21 @@ import {
   listCompetitionJudges, addCompetitionJudge, removeCompetitionJudge,
 } from "../data.js?v=19";
 
+function loadScript(src) {
+  return new Promise((resolve, reject) => {
+    if (document.querySelector(`script[src="${src}"]`)) { resolve(); return; }
+    const s = document.createElement("script"); s.src = src;
+    s.onload = resolve; s.onerror = reject;
+    document.head.append(s);
+  });
+}
+async function loadJsPDF() {
+  if (window.jspdf?.jsPDF) return window.jspdf;
+  await loadScript("https://cdn.jsdelivr.net/npm/jspdf@2.5.1/dist/jspdf.umd.min.js");
+  await loadScript("https://cdn.jsdelivr.net/npm/jspdf-autotable@3.8.3/dist/jspdf.plugin.autotable.min.js");
+  return window.jspdf;
+}
+
 // Cache de conteo de equipos por proyecto
 const teamCountCache = {};
 
@@ -142,6 +157,11 @@ export async function renderFieldAdmin(body) {
                 },
               })
             : null,
+          el("button", {
+            class: "btn btn--ghost btn--sm",
+            text: "📄 PDF Jueces",
+            onclick: (e) => generateJudgePDF(e.currentTarget, comp),
+          }),
           el("button", {
             class: "btn btn--ghost btn--sm",
             text: "Editar",
@@ -488,6 +508,226 @@ export async function renderFieldAdmin(body) {
     if (result) { toast("Competencia actualizada", "success"); renderFieldAdmin(body); }
   }
 
+}
+
+// ── Generar PDF informativo para los jueces de campo ─────────────
+async function generateJudgePDF(btn, comp) {
+  btn.disabled = true;
+  btn.textContent = "Generando…";
+  try {
+    const [judges, teams] = await Promise.all([
+      listCompetitionJudges(comp.id),
+      listTeamsByProject(comp.project_id),
+    ]);
+
+    const { jsPDF } = await loadJsPDF();
+    const doc = new jsPDF({ orientation: "portrait", unit: "mm", format: "a4" });
+    const pageW = doc.internal.pageSize.getWidth();
+    const margin = 15;
+    let y = 20;
+
+    const projName = comp.project?.name || "Competencia";
+    const typeName = TYPE_LABELS[comp.competition_type] || comp.competition_type;
+    const config = comp.config || {};
+
+    // ── Encabezado ──
+    doc.setFontSize(18);
+    doc.setFont(undefined, "bold");
+    doc.text("FERIA STEAM – Prueba de Campo", pageW / 2, y, { align: "center" });
+    y += 10;
+    doc.setFontSize(14);
+    doc.text(projName.toUpperCase(), pageW / 2, y, { align: "center" });
+    y += 8;
+    doc.setFontSize(10);
+    doc.setFont(undefined, "normal");
+    doc.text(`Tipo: ${typeName}`, pageW / 2, y, { align: "center" });
+    y += 6;
+    doc.text(`Equipos participantes: ${teams.length}`, pageW / 2, y, { align: "center" });
+    y += 10;
+
+    // ── Descripción del tipo ──
+    doc.setDrawColor(34, 197, 94);
+    doc.setLineWidth(0.5);
+    doc.line(margin, y, pageW - margin, y);
+    y += 8;
+
+    doc.setFontSize(11);
+    doc.setFont(undefined, "bold");
+    doc.text("DESCRIPCIÓN DE LA COMPETENCIA", margin, y);
+    y += 6;
+    doc.setFont(undefined, "normal");
+    doc.setFontSize(10);
+
+    const desc = TYPE_DESCRIPTIONS[comp.competition_type] || "Competencia de campo.";
+    const descLines = doc.splitTextToSize(desc, pageW - margin * 2);
+    doc.text(descLines, margin, y);
+    y += descLines.length * 5 + 4;
+
+    // ── Sistema de puntuación ──
+    doc.setFontSize(11);
+    doc.setFont(undefined, "bold");
+    doc.text("SISTEMA DE PUNTUACIÓN", margin, y);
+    y += 6;
+    doc.setFont(undefined, "normal");
+    doc.setFontSize(10);
+
+    if (comp.competition_type === "time_trial") {
+      doc.text("Se registra el tiempo de cada equipo. Menor tiempo = mejor posición.", margin, y);
+      y += 5;
+      doc.text("Puntos por posición:", margin, y);
+      y += 5;
+      const positions = config.positions || [];
+      if (positions.length) {
+        doc.autoTable({
+          startY: y,
+          margin: { left: margin, right: margin },
+          head: [["Posición", "Puntos"]],
+          body: positions.map((p) => [`${p.place}°`, `${p.points} pts`]),
+          styles: { fontSize: 9 },
+          headStyles: { fillColor: [34, 197, 94] },
+        });
+        y = doc.lastAutoTable.finalY + 6;
+      }
+      if (config.unit) { doc.text(`Unidad de medida: ${config.unit === "seconds" ? "segundos" : config.unit}`, margin, y); y += 5; }
+
+    } else if (comp.competition_type === "performance") {
+      doc.text("Se marcan los criterios/eventos logrados por cada equipo. Los puntos se suman.", margin, y);
+      y += 5;
+      const events = config.events || [];
+      if (events.length) {
+        doc.autoTable({
+          startY: y,
+          margin: { left: margin, right: margin },
+          head: [["Criterio / Evento", "Puntos si se logra"]],
+          body: events.map((e) => [e.label, `${e.points} pts`]),
+          styles: { fontSize: 9 },
+          headStyles: { fillColor: [34, 197, 94] },
+        });
+        y = doc.lastAutoTable.finalY + 6;
+      }
+      doc.text("El juez marca con ✓ cada criterio logrado por ronda. Los puntos se acumulan entre rondas.", margin, y);
+      y += 5;
+
+    } else if (comp.competition_type === "combat") {
+      doc.text("Se registran combates entre pares de equipos.", margin, y);
+      y += 5;
+      doc.autoTable({
+        startY: y,
+        margin: { left: margin, right: margin },
+        head: [["Resultado", "Puntos"]],
+        body: [
+          ["Victoria", `${config.win_points ?? 3} pts`],
+          ["Empate", `${config.draw_points ?? 1} pts`],
+          ["Derrota", `${config.loss_points ?? 0} pts`],
+        ],
+        styles: { fontSize: 9 },
+        headStyles: { fillColor: [34, 197, 94] },
+      });
+      y = doc.lastAutoTable.finalY + 6;
+
+    } else if (comp.competition_type === "elimination") {
+      doc.text("Rondas eliminatorias progresivas. Equipos acumulan puntos por ronda superada.", margin, y);
+      y += 5;
+      doc.text(`Puntos por ronda superada: ${config.points_per_round_survived ?? 2} pts`, margin, y);
+      y += 5;
+
+    } else if (comp.competition_type === "timed_quantity") {
+      doc.text(`Se mide el tiempo para mover ${config.quantity || "N"} objetos. Menor tiempo = mejor posición.`, margin, y);
+      y += 5;
+      const pts = config.points_by_position || [];
+      if (pts.length) {
+        doc.autoTable({
+          startY: y,
+          margin: { left: margin, right: margin },
+          head: [["Posición", "Puntos"]],
+          body: pts.map((p, i) => [`${i + 1}°`, `${p} pts`]),
+          styles: { fontSize: 9 },
+          headStyles: { fillColor: [34, 197, 94] },
+        });
+        y = doc.lastAutoTable.finalY + 6;
+      }
+    }
+
+    // ── Jueces asignados ──
+    if (y > 230) { doc.addPage(); y = 20; }
+    y += 4;
+    doc.setFontSize(11);
+    doc.setFont(undefined, "bold");
+    doc.text("JUECES DE CAMPO ASIGNADOS", margin, y);
+    y += 6;
+    doc.setFont(undefined, "normal");
+    doc.setFontSize(10);
+
+    if (judges.length) {
+      judges.forEach((j, i) => {
+        const name = j.evaluator?.profile?.display_name || `Juez ${i + 1}`;
+        doc.text(`${i + 1}. ${name}`, margin + 4, y);
+        y += 5;
+      });
+    } else {
+      doc.text("Sin jueces asignados aún.", margin + 4, y);
+      y += 5;
+    }
+
+    // ── Orden de equipos ──
+    y += 6;
+    if (y > 230) { doc.addPage(); y = 20; }
+    doc.setFontSize(11);
+    doc.setFont(undefined, "bold");
+    doc.text("EQUIPOS PARTICIPANTES (Orden de presentación)", margin, y);
+    y += 6;
+
+    if (teams.length) {
+      doc.autoTable({
+        startY: y,
+        margin: { left: margin, right: margin },
+        head: [["#", "Equipo", "Grado"]],
+        body: teams.map((t, i) => [i + 1, t.name, t.grade_label || "—"]),
+        styles: { fontSize: 9 },
+        headStyles: { fillColor: [34, 197, 94] },
+      });
+      y = doc.lastAutoTable.finalY + 8;
+    }
+
+    // ── Instrucciones para el juez ──
+    if (y > 240) { doc.addPage(); y = 20; }
+    doc.setFontSize(11);
+    doc.setFont(undefined, "bold");
+    doc.text("INSTRUCCIONES PARA EL JUEZ", margin, y);
+    y += 6;
+    doc.setFont(undefined, "normal");
+    doc.setFontSize(9);
+
+    const instructions = [
+      "1. Ingrese a la plataforma con su correo y contraseña asignados.",
+      "2. En el Panel jurado, busque la sección '🏁 Pruebas de campo' y seleccione esta competencia.",
+      "3. Cree rondas con el botón '+ Nueva ronda' según avance la competencia.",
+      "4. Registre los resultados de cada equipo en la ronda activa.",
+      "5. Los cálculos de ranking se actualizan automáticamente en tiempo real.",
+      "6. Puede subir fotos de los equipos desde la sección inferior de la pantalla.",
+      "7. Si tiene dudas, consulte al administrador.",
+    ];
+    instructions.forEach((line) => { doc.text(line, margin, y); y += 4.5; });
+
+    // ── Pie de página ──
+    const totalPages = doc.internal.getNumberOfPages();
+    for (let i = 1; i <= totalPages; i++) {
+      doc.setPage(i);
+      doc.setFontSize(8);
+      doc.setTextColor(150);
+      doc.text(`Feria STEAM ${new Date().getFullYear()} – Documento generado automáticamente`, pageW / 2, 287, { align: "center" });
+      doc.text(`Página ${i} de ${totalPages}`, pageW - margin, 287, { align: "right" });
+      doc.setTextColor(0);
+    }
+
+    doc.save(`Juez-Campo-${projName.replace(/\s+/g, "-")}.pdf`);
+    toast("PDF generado", "success");
+  } catch (err) {
+    toast("Error: " + (err?.message || err), "error");
+  } finally {
+    btn.disabled = false;
+    btn.textContent = "📄 PDF Jueces";
+  }
 }
 
 // ── Configuración por defecto según tipo ─────────────────────────
