@@ -907,3 +907,34 @@ export async function deleteFieldResult(id) {
   const { error } = await supabase.from("field_results").delete().eq("id", id);
   if (error) throw error;
 }
+
+/* --- Jueces de competencia (multi-juez) --- */
+
+export async function listCompetitionJudges(competitionId) {
+  const { data, error } = await supabase
+    .from("field_competition_judges")
+    .select("*, evaluator:evaluators(id, user_id, profile:profiles(display_name))")
+    .eq("competition_id", competitionId)
+    .order("created_at", { ascending: true });
+  if (error) throw error;
+  return data ?? [];
+}
+
+export async function addCompetitionJudge(competitionId, evaluatorId) {
+  const { data, error } = await supabase
+    .from("field_competition_judges")
+    .insert({ competition_id: competitionId, evaluator_id: evaluatorId })
+    .select("*")
+    .single();
+  if (error) throw error;
+  return data;
+}
+
+export async function removeCompetitionJudge(competitionId, evaluatorId) {
+  const { error } = await supabase
+    .from("field_competition_judges")
+    .delete()
+    .eq("competition_id", competitionId)
+    .eq("evaluator_id", evaluatorId);
+  if (error) throw error;
+}

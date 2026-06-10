@@ -157,39 +157,55 @@ export async function renderJury() {
     ]));
   });
 
-  // ── Competencias de campo asignadas al juez ─────────────────────
+  // ── Competencias de campo asignadas al juez (multi-juez) ──────────
   try {
-    const { data: myFieldComps } = await supabase
-      .from("field_competitions")
-      .select("id, competition_type, status, project:projects(name)")
-      .not("assigned_evaluator_id", "is", null)
-      .in("status", ["active", "finished"]);
+    // Buscar mis asignaciones en la tabla intermedia
+    const { data: myEvaluator } = await supabase
+      .from("evaluators")
+      .select("id")
+      .eq("user_id", auth.session.user.id)
+      .maybeSingle();
 
-    // Filtrar solo las que me pertenecen (RLS ya lo hizo, pero igual son seguras)
-    if (myFieldComps?.length) {
-      wrap.append(el("div", { class: "section-head mt-6" }, [
-        el("h2", { text: "🏁 Pruebas de campo" }),
-        el("p", { class: "text-muted", text: "Competencias con registro manual de tiempos/resultados" }),
-      ]));
-      const fieldList = el("div", { class: "grid grid--cards" });
-      wrap.append(fieldList);
-      myFieldComps.forEach((fc) => {
-        fieldList.append(el("a", {
-          class: "project-card",
-          href: `#/campo/${fc.id}`,
-          style: "border:2px solid var(--color-accent);background:linear-gradient(135deg, rgba(34,197,94,0.08) 0%, transparent 60%)",
-        }, [
-          el("div", {
-            style: "padding:var(--space-3);text-align:center;font-size:2rem;background:rgba(34,197,94,0.12);border-radius:var(--radius-md)",
-            text: "🏁",
-          }),
-          el("div", { class: "project-card__title", text: fc.project?.name || "Competencia" }),
-          el("div", { class: "project-card__meta", style: "color:var(--color-accent)", text: `${TYPE_LABELS[fc.competition_type] || fc.competition_type} · ${STATUS_LABELS[fc.status]}` }),
-          el("div", { class: `btn btn--sm ${fc.status === "active" ? "btn--accent" : "btn--ghost"}`, text: fc.status === "active" ? "🏁 Registrar →" : "Ver resultados →" }),
-        ]));
-      });
+    if (myEvaluator) {
+      const { data: myAssignments } = await supabase
+        .from("field_competition_judges")
+        .select("competition_id")
+        .eq("evaluator_id", myEvaluator.id);
+
+      if (myAssignments?.length) {
+        const compIds = myAssignments.map((a) => a.competition_id);
+        const { data: myFieldComps } = await supabase
+          .from("field_competitions")
+          .select("id, competition_type, status, project:projects(name)")
+          .in("id", compIds)
+          .in("status", ["active", "finished"]);
+
+        if (myFieldComps?.length) {
+          wrap.append(el("div", { class: "section-head mt-6" }, [
+            el("h2", { text: "🏁 Pruebas de campo" }),
+            el("p", { class: "text-muted", text: "Competencias con registro manual de tiempos/resultados" }),
+          ]));
+          const fieldList = el("div", { class: "grid grid--cards" });
+          wrap.append(fieldList);
+          myFieldComps.forEach((fc) => {
+            fieldList.append(el("a", {
+              class: "project-card",
+              href: `#/campo/${fc.id}`,
+              style: "border:2px solid var(--color-accent);background:linear-gradient(135deg, rgba(34,197,94,0.08) 0%, transparent 60%)",
+            }, [
+              el("div", {
+                style: "padding:var(--space-3);text-align:center;font-size:2rem;background:rgba(34,197,94,0.12);border-radius:var(--radius-md)",
+                text: "🏁",
+              }),
+              el("div", { class: "project-card__title", text: fc.project?.name || "Competencia" }),
+              el("div", { class: "project-card__meta", style: "color:var(--color-accent)", text: `${TYPE_LABELS[fc.competition_type] || fc.competition_type} · ${STATUS_LABELS[fc.status]}` }),
+              el("div", { class: `btn btn--sm ${fc.status === "active" ? "btn--accent" : "btn--ghost"}`, text: fc.status === "active" ? "🏁 Registrar →" : "Ver resultados →" }),
+            ]));
+          });
+        }
+      }
     }
-  } catch { /* silencioso: si no hay competencias asignadas, no mostramos nada */ }
+  } catch { /* silencioso */ }
 }
 
 function paintLogin(root) {

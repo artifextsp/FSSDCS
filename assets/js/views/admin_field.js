@@ -3,6 +3,7 @@ import { getCurrentEdition } from "../state.js?v=19";
 import {
   listProjects, listEvaluators, listTeamsByProject,
   listFieldCompetitions, createFieldCompetition, updateFieldCompetition, deleteFieldCompetition,
+  listCompetitionJudges, addCompetitionJudge, removeCompetitionJudge,
 } from "../data.js?v=19";
 
 // Cache de conteo de equipos por proyecto
@@ -92,7 +93,6 @@ export async function renderFieldAdmin(body) {
   // ── Card de una competencia ───────────────────────────────────
   function competitionCard(comp) {
     const projName = comp.project?.name || "—";
-    const judgeName = comp.evaluator?.profile?.display_name || "Sin asignar";
     const teamsInComp = teamCountCache[comp.project_id] ?? "?";
     const statusColors = { setup: "var(--color-warning)", active: "var(--color-accent)", finished: "var(--color-text-muted)" };
     const statusLabels = { setup: "En configuración", active: "En curso", finished: "Finalizada" };
@@ -172,30 +172,103 @@ export async function renderFieldAdmin(body) {
       ])
     );
 
-    // Juez asignado
-    card.append(
-      el("div", {
-        style: "padding:var(--space-3) var(--space-4);background:var(--color-surface-2);border-radius:var(--radius-sm);margin-bottom:var(--space-3)",
-      }, [
-        el("div", { class: "flex items-center", style: "justify-content:space-between;flex-wrap:wrap;gap:8px" }, [
-          el("div", {}, [
-            el("span", { class: "text-muted", style: "font-size:0.78rem;text-transform:uppercase;letter-spacing:.05em", text: "Juez de campo" }),
-            el("p", { style: "margin:2px 0 0;font-weight:600", text: judgeName }),
-          ]),
-          el("button", {
-            class: "btn btn--ghost btn--sm",
-            text: "Cambiar juez",
-            onclick: () => openAssignJudgeModal(comp),
-          }),
-        ]),
-      ])
-    );
+    // Jueces asignados (multi-juez)
+    const judgesSection = el("div", {
+      style: "padding:var(--space-3) var(--space-4);background:var(--color-surface-2);border-radius:var(--radius-sm);margin-bottom:var(--space-3)",
+    });
+    card.append(judgesSection);
+    loadJudgesSection(comp, judgesSection);
 
     // Config resumen
     const configSummary = buildConfigSummary(comp.competition_type, comp.config);
     if (configSummary) card.append(configSummary);
 
     return card;
+  }
+
+  async function loadJudgesSection(comp, container) {
+    clear(container);
+    container.append(el("span", { class: "text-muted", style: "font-size:0.8rem", text: "Cargando jueces…" }));
+    let judges = [];
+    try { judges = await listCompetitionJudges(comp.id); } catch {}
+    clear(container);
+
+    container.append(
+      el("div", { class: "flex items-center", style: "justify-content:space-between;flex-wrap:wrap;gap:8px;margin-bottom:8px" }, [
+        el("span", { class: "text-muted", style: "font-size:0.78rem;text-transform:uppercase;letter-spacing:.05em", text: `Jueces de campo (${judges.length})` }),
+        el("button", {
+          class: "btn btn--accent btn--sm",
+          text: "+ Agregar juez",
+          onclick: () => openAddJudgeModal(comp, container),
+        }),
+      ])
+    );
+
+    if (!judges.length) {
+      container.append(el("p", { style: "margin:0;font-size:0.85rem;color:var(--color-text-muted)", text: "Sin jueces asignados" }));
+    } else {
+      judges.forEach((j) => {
+        const name = j.evaluator?.profile?.display_name || `Jurado ${j.evaluator_id.slice(0, 6)}`;
+        container.append(
+          el("div", { class: "flex items-center", style: "justify-content:space-between;padding:4px 0;border-bottom:1px solid var(--color-border)" }, [
+            el("span", { style: "font-weight:600;font-size:0.9rem", text: name }),
+            el("button", {
+              class: "btn btn--danger btn--sm",
+              text: "Quitar",
+              style: "font-size:0.75rem;padding:2px 8px",
+              onclick: async (e) => {
+                e.currentTarget.disabled = true;
+                try {
+                  await removeCompetitionJudge(comp.id, j.evaluator_id);
+                  toast(`${name} removido`, "success");
+                  loadJudgesSection(comp, container);
+                } catch (err) { toast("Error: " + err?.message, "error"); }
+              },
+            }),
+          ])
+        );
+      });
+    }
+  }
+
+  async function openAddJudgeModal(comp, judgesContainer) {
+    let currentJudges = [];
+    try { currentJudges = await listCompetitionJudges(comp.id); } catch {}
+    const assignedIds = new Set(currentJudges.map((j) => j.evaluator_id));
+    const available = evaluators.filter((ev) => !assignedIds.has(ev.id));
+
+    if (!available.length) {
+      toast("Todos los jurados ya están asignados a esta competencia", "warning");
+      return;
+    }
+
+    const judgeSelect = el("select", { class: "select" });
+    available.forEach((ev) =>
+      judgeSelect.append(el("option", { value: ev.id, text: ev.profile?.display_name || `Jurado ${ev.id.slice(0, 6)}` }))
+    );
+
+    const result = await openModal({
+      title: "Agregar juez de campo",
+      body: el("div", {}, [
+        el("p", { class: "text-muted", text: `Competencia: ${comp.project?.name || "—"}` }),
+        el("p", { class: "text-muted", style: "font-size:0.83rem", text: `${currentJudges.length} juez/jueces ya asignados` }),
+        el("div", { class: "field mt-3" }, [el("label", { class: "field__label", text: "Seleccionar juez" }), judgeSelect]),
+      ]),
+      actions: [
+        { label: "Cancelar", onClick: () => null },
+        {
+          label: "Agregar", variant: "primary", onClick: async () => {
+            if (!judgeSelect.value) throw new Error("Selecciona un juez.");
+            await addCompetitionJudge(comp.id, judgeSelect.value);
+            return true;
+          },
+        },
+      ],
+    });
+    if (result) {
+      toast("Juez agregado", "success");
+      loadJudgesSection(comp, judgesContainer);
+    }
   }
 
   // ── Modal: crear competencia ──────────────────────────────────
@@ -257,7 +330,7 @@ export async function renderFieldAdmin(body) {
               config: getDefaultConfig(typeSelect.value),
             });
             if (judgeSelect.value) {
-              await updateFieldCompetition(comp.id, { assigned_evaluator_id: judgeSelect.value });
+              await addCompetitionJudge(comp.id, judgeSelect.value);
             }
             return true;
           },
@@ -415,39 +488,6 @@ export async function renderFieldAdmin(body) {
     if (result) { toast("Competencia actualizada", "success"); renderFieldAdmin(body); }
   }
 
-  // ── Modal: asignar/cambiar juez ───────────────────────────────
-  async function openAssignJudgeModal(comp) {
-    const judgeSelect = el("select", { class: "select" });
-    judgeSelect.append(el("option", { value: "", text: "— Sin asignar —" }));
-    evaluators.forEach((ev) =>
-      judgeSelect.append(el("option", {
-        value: ev.id,
-        text: ev.profile?.display_name || `Jurado ${ev.id.slice(0, 6)}`,
-        selected: ev.id === comp.assigned_evaluator_id,
-      }))
-    );
-
-    const result = await openModal({
-      title: "Asignar juez de campo",
-      body: el("div", {}, [
-        el("p", { class: "text-muted", text: `Competencia: ${comp.project?.name || "—"}` }),
-        el("div", { class: "field mt-3" }, [el("label", { class: "field__label", text: "Juez asignado" }), judgeSelect]),
-        el("p", { class: "field__hint", text: "Puedes cambiar el juez en cualquier momento, incluso durante la competencia. Los datos no se pierden." }),
-      ]),
-      actions: [
-        { label: "Cancelar", onClick: () => null },
-        {
-          label: "Asignar", variant: "primary", onClick: async () => {
-            await updateFieldCompetition(comp.id, {
-              assigned_evaluator_id: judgeSelect.value || null,
-            });
-            return true;
-          },
-        },
-      ],
-    });
-    if (result) { toast("Juez actualizado", "success"); renderFieldAdmin(body); }
-  }
 }
 
 // ── Configuración por defecto según tipo ─────────────────────────
