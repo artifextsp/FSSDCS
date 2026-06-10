@@ -612,9 +612,39 @@ async function generateJudgePDF(btn, comp) {
         });
         y = doc.lastAutoTable.finalY + 6;
       }
-      const perfNote = doc.splitTextToSize("El juez marca cada criterio logrado por ronda. Los puntos se acumulan entre rondas.", pageW - margin * 2);
+      const perfNote = doc.splitTextToSize("El juez marca cada criterio logrado por ronda. Los puntos se acumulan entre rondas.", contentW);
       doc.text(perfNote, margin, y);
       y += perfNote.length * 5;
+
+      // Evaluacion Prototipo + Bonus
+      y += 4;
+      if (y > 230) { doc.addPage(); y = 20; }
+      doc.setFont(undefined, "bold");
+      doc.text("EVALUACION DE PROTOTIPO + BONUS", margin, y);
+      y += 6;
+      doc.setFont(undefined, "normal");
+      const preDesc = doc.splitTextToSize(
+        "Antes de iniciar las rondas, el juez evalua el prototipo de cada equipo en dos criterios y asigna un bonus especial:",
+        contentW
+      );
+      doc.text(preDesc, margin, y);
+      y += preDesc.length * 5;
+      doc.autoTable({
+        startY: y,
+        margin: { left: margin, right: margin },
+        head: [["Concepto", "Rango", "Descripcion"]],
+        body: [
+          ["Funcionalidad", "1 a 5 pts", "Que tan bien funciona el prototipo"],
+          ["Decoracion", "1 a 5 pts", "Presentacion visual y estetica del prototipo"],
+          ["Bonus especial", "0 a 3 pts", "Por cumplir retos adicionales (ej. visitar stands)"],
+        ],
+        styles: { fontSize: 9 },
+        headStyles: { fillColor: [234, 179, 8] },
+      });
+      y = doc.lastAutoTable.finalY + 4;
+      const bonusNote = doc.splitTextToSize("Maximo posible en esta seccion: 13 puntos (5+5+3). Se suman al puntaje de las rondas.", contentW);
+      doc.text(bonusNote, margin, y);
+      y += bonusNote.length * 5;
 
     } else if (comp.competition_type === "combat") {
       const combatDesc = doc.splitTextToSize("Se registran combates entre pares de equipos.", contentW);

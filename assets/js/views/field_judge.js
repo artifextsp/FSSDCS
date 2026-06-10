@@ -397,6 +397,7 @@ async function renderTimeTrial(container, comp) {
 async function renderPerformance(container, comp) {
   const config = comp.config || {};
   const events = config.events || [{ key: "event_1", label: "Evento 1", points: 2 }];
+  const hasPreScores = config.pre_scores !== false;
 
   let teams, rounds, allResults;
   try {
@@ -407,7 +408,17 @@ async function renderPerformance(container, comp) {
     ]);
   } catch (err) { container.append(el("div", { class: "error-banner", text: "Error: " + err?.message })); return; }
 
-  let activeRoundIdx = rounds.length ? rounds.length - 1 : -1;
+  // Asegurar ronda 0 (Evaluación Prototipo + Bonus)
+  let evalRound = rounds.find((r) => r.round_number === 0);
+  if (!evalRound && comp.status === "active" && hasPreScores) {
+    try {
+      evalRound = await createFieldRound({ competitionId: comp.id, roundNumber: 0, label: "Prototipo + Bonus" });
+      rounds.unshift(evalRound);
+    } catch { /* puede que ya exista */ }
+  }
+  const normalRounds = rounds.filter((r) => r.round_number > 0);
+
+  let activeRoundIdx = normalRounds.length ? normalRounds.length - 1 : -1;
 
   container.append(
     el("div", { class: "section-head" }, [
@@ -422,10 +433,86 @@ async function renderPerformance(container, comp) {
   );
 
   container.append(el("div", { class: "mb-4", style: "font-size:0.83rem;color:var(--color-text-muted)" }, [
-    el("strong", { text: "Criterios: " }),
+    el("strong", { text: "Criterios por ronda: " }),
     ...events.map((e) => el("span", { text: `${e.label} (${e.points}pts)  ` })),
   ]));
 
+  // ── Sección: Evaluación Prototipo + Bonus ──────────────────────
+  if (hasPreScores && evalRound) {
+    const evalSection = el("div", { class: "card mb-4", style: "border:2px solid var(--color-warning);background:linear-gradient(135deg,rgba(234,179,8,0.06) 0%,transparent 60%)" });
+    evalSection.append(el("h3", { style: "margin:0 0 var(--space-2)", text: "Evaluacion Prototipo + Bonus" }));
+    evalSection.append(el("p", { class: "text-muted", style: "font-size:0.82rem;margin:0 0 var(--space-3)" }, [
+      "Funcionalidad (1-5) · Decoracion (1-5) · Bonus especial (0-3)",
+    ]));
+
+    const evalResults = allResults.filter((r) => (r.round?.id || r.round_id) === evalRound.id);
+
+    teams.forEach((team) => {
+      const existing = evalResults.find((r) => (r.team?.id || r.team_id) === team.id);
+      const meta = existing?.meta || {};
+      const func = meta.funcionalidad ?? "";
+      const deco = meta.decoracion ?? "";
+      const bonus = meta.bonus ?? "";
+
+      const row = el("div", { style: "padding:var(--space-2) 0;border-bottom:1px solid var(--color-border)" });
+      row.append(el("div", { style: "font-weight:600;margin-bottom:4px;display:flex;justify-content:space-between;align-items:center" }, [
+        el("span", { text: team.name }),
+        el("span", { class: "badge", style: "background:var(--color-warning);color:#000", text: `${existing?.computed_points ?? 0} pts` }),
+      ]));
+
+      const inputsRow = el("div", { class: "flex gap-3", style: "flex-wrap:wrap;align-items:center" });
+
+      const funcInput = el("input", {
+        type: "number", min: "1", max: "5", step: "1", class: "input",
+        style: "width:60px;text-align:center", value: func ? String(func) : "",
+        placeholder: "1-5", disabled: comp.status !== "active",
+      });
+      const decoInput = el("input", {
+        type: "number", min: "1", max: "5", step: "1", class: "input",
+        style: "width:60px;text-align:center", value: deco ? String(deco) : "",
+        placeholder: "1-5", disabled: comp.status !== "active",
+      });
+      const bonusInput = el("input", {
+        type: "number", min: "0", max: "3", step: "1", class: "input",
+        style: "width:60px;text-align:center", value: bonus ? String(bonus) : "",
+        placeholder: "0-3", disabled: comp.status !== "active",
+      });
+
+      const saveBtn = el("button", {
+        class: "btn btn--accent btn--sm", text: "Guardar",
+        disabled: comp.status !== "active",
+        onclick: async () => {
+          const f = Math.min(5, Math.max(0, parseInt(funcInput.value) || 0));
+          const d = Math.min(5, Math.max(0, parseInt(decoInput.value) || 0));
+          const b = Math.min(3, Math.max(0, parseInt(bonusInput.value) || 0));
+          const pts = f + d + b;
+          const newMeta = { funcionalidad: f, decoracion: d, bonus: b };
+          try {
+            saveBtn.disabled = true;
+            await upsertFieldResult({ roundId: evalRound.id, teamId: team.id, rawValue: pts, computedPoints: pts, meta: newMeta });
+            const idx = allResults.findIndex((r) => (r.round?.id || r.round_id) === evalRound.id && (r.team?.id || r.team_id) === team.id);
+            const nr = { round_id: evalRound.id, round: { id: evalRound.id, round_number: 0 }, team_id: team.id, team: { id: team.id, name: team.name }, raw_value: pts, computed_points: pts, meta: newMeta };
+            if (idx >= 0) allResults[idx] = nr; else allResults.push(nr);
+            toast(`${team.name}: ${pts} pts (F:${f} D:${d} B:${b})`, "success");
+          } catch (err) { toast(err?.message, "error"); }
+          finally { saveBtn.disabled = comp.status !== "active"; }
+        },
+      });
+
+      inputsRow.append(
+        el("label", { style: "font-size:0.8rem;display:flex;align-items:center;gap:4px" }, [el("span", { text: "Func:" }), funcInput]),
+        el("label", { style: "font-size:0.8rem;display:flex;align-items:center;gap:4px" }, [el("span", { text: "Deco:" }), decoInput]),
+        el("label", { style: "font-size:0.8rem;display:flex;align-items:center;gap:4px" }, [el("span", { text: "Bonus:" }), bonusInput]),
+        saveBtn,
+      );
+      row.append(inputsRow);
+      evalSection.append(row);
+    });
+
+    container.append(evalSection);
+  }
+
+  // ── Tabs de rondas normales ────────────────────────────────────
   const tabBar = el("div", { class: "tabs", style: "margin-bottom:var(--space-3);overflow-x:auto" });
   const roundContent = el("div");
   container.append(tabBar, roundContent);
@@ -433,9 +520,9 @@ async function renderPerformance(container, comp) {
   function renderRounds() {
     clear(tabBar);
     clear(roundContent);
-    if (!rounds.length) { roundContent.append(el("div", { class: "empty", text: "No hay rondas." })); return; }
+    if (!normalRounds.length) { roundContent.append(el("div", { class: "empty", text: "Crea una ronda para empezar a registrar criterios." })); return; }
 
-    rounds.forEach((round, idx) => {
+    normalRounds.forEach((round, idx) => {
       tabBar.append(el("button", {
         class: `tab${idx === activeRoundIdx ? " is-active" : ""}`,
         text: round.label || `Ronda ${round.round_number}`,
@@ -450,20 +537,50 @@ async function renderPerformance(container, comp) {
 
     if (activeRoundIdx === -2) { renderAccumulated(); return; }
 
-    const round = rounds[activeRoundIdx] || rounds[rounds.length - 1];
+    const round = normalRounds[activeRoundIdx] || normalRounds[normalRounds.length - 1];
     const rr = allResults.filter((r) => (r.round?.id || r.round_id) === round.id);
     roundContent.append(renderRoundCard(round, rr));
   }
 
   function renderAccumulated() {
     const card = el("div", { class: "card" });
-    card.append(el("h3", { style: "margin:0 0 var(--space-3)", text: "Ranking acumulado" }));
+    card.append(el("h3", { style: "margin:0 0 var(--space-3)", text: "Ranking acumulado (total)" }));
     const totals = {};
-    teams.forEach((t) => { totals[t.id] = { name: t.name, pts: 0 }; });
-    allResults.forEach((r) => { const tid = r.team?.id || r.team_id; if (totals[tid]) totals[tid].pts += Number(r.computed_points) || 0; });
+    teams.forEach((t) => { totals[t.id] = { name: t.name, pts: 0, func: 0, deco: 0, bonus: 0, rondas: 0 }; });
+    allResults.forEach((r) => {
+      const tid = r.team?.id || r.team_id;
+      if (!totals[tid]) return;
+      const pts = Number(r.computed_points) || 0;
+      totals[tid].pts += pts;
+      const rn = r.round?.round_number ?? (rounds.find((rd) => rd.id === r.round_id)?.round_number);
+      if (rn === 0) {
+        totals[tid].func = r.meta?.funcionalidad || 0;
+        totals[tid].deco = r.meta?.decoracion || 0;
+        totals[tid].bonus = r.meta?.bonus || 0;
+      } else {
+        totals[tid].rondas += pts;
+      }
+    });
+
+    // Tabla con columnas
+    const header = el("div", { style: "display:grid;grid-template-columns:2fr repeat(5,1fr);gap:4px;padding:6px 0;border-bottom:2px solid var(--color-border);font-size:0.78rem;font-weight:600;text-transform:uppercase;color:var(--color-text-muted)" }, [
+      el("span", { text: "Equipo" }),
+      el("span", { style: "text-align:center", text: "Func" }),
+      el("span", { style: "text-align:center", text: "Deco" }),
+      el("span", { style: "text-align:center", text: "Bonus" }),
+      el("span", { style: "text-align:center", text: "Rondas" }),
+      el("span", { style: "text-align:center", text: "TOTAL" }),
+    ]);
+    card.append(header);
+
     Object.values(totals).sort((a, b) => b.pts - a.pts).forEach((t, i) => {
-      card.append(el("div", { style: `display:flex;justify-content:space-between;padding:6px 0;border-bottom:1px solid var(--color-border);${i < 3 ? "font-weight:600" : ""}` }, [
-        el("span", { text: `${i + 1}. ${t.name}` }), el("span", { style: "color:var(--color-accent)", text: `${t.pts} pts` }),
+      card.append(el("div", { style: `display:grid;grid-template-columns:2fr repeat(5,1fr);gap:4px;padding:6px 0;border-bottom:1px solid var(--color-border);font-size:0.85rem;${i < 3 ? "font-weight:600" : ""}` }, [
+        el("span", { text: `${i + 1}. ${t.name}` }),
+        el("span", { style: "text-align:center", text: String(t.func) }),
+        el("span", { style: "text-align:center", text: String(t.deco) }),
+        el("span", { style: "text-align:center", text: String(t.bonus) }),
+        el("span", { style: "text-align:center", text: String(t.rondas) }),
+        el("span", { style: "text-align:center;color:var(--color-accent);font-weight:700", text: String(t.pts) }),
       ]));
     });
     roundContent.append(card);
@@ -479,7 +596,7 @@ async function renderPerformance(container, comp) {
       comp.status === "active"
         ? el("button", { class: "btn btn--danger btn--sm", text: "Eliminar", onclick: async () => {
             if (!confirm("¿Eliminar esta ronda?")) return;
-            try { await deleteFieldRound(round.id); rounds = rounds.filter((r) => r.id !== round.id); allResults = allResults.filter((r) => (r.round?.id || r.round_id) !== round.id); activeRoundIdx = Math.max(0, rounds.length - 1); renderRounds(); toast("Eliminada", "success"); } catch (err) { toast(err?.message, "error"); }
+            try { await deleteFieldRound(round.id); const ri = normalRounds.indexOf(round); if (ri >= 0) normalRounds.splice(ri, 1); allResults = allResults.filter((r) => (r.round?.id || r.round_id) !== round.id); activeRoundIdx = Math.max(0, normalRounds.length - 1); renderRounds(); toast("Eliminada", "success"); } catch (err) { toast(err?.message, "error"); }
           }})
         : null,
     ]));
@@ -523,8 +640,8 @@ async function renderPerformance(container, comp) {
   }
 
   async function addRound() {
-    const nextNum = rounds.length ? Math.max(...rounds.map((r) => r.round_number)) + 1 : 1;
-    try { const nr = await createFieldRound({ competitionId: comp.id, roundNumber: nextNum, label: `Ronda ${nextNum}` }); rounds.push(nr); activeRoundIdx = rounds.length - 1; renderRounds(); toast(`Ronda ${nextNum}`, "success"); } catch (err) { toast(err?.message, "error"); }
+    const nextNum = normalRounds.length ? Math.max(...normalRounds.map((r) => r.round_number)) + 1 : 1;
+    try { const nr = await createFieldRound({ competitionId: comp.id, roundNumber: nextNum, label: `Ronda ${nextNum}` }); normalRounds.push(nr); rounds.push(nr); activeRoundIdx = normalRounds.length - 1; renderRounds(); toast(`Ronda ${nextNum}`, "success"); } catch (err) { toast(err?.message, "error"); }
   }
 
   renderRounds();

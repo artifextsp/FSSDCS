@@ -149,16 +149,27 @@ export async function renderRanking() {
     const cacheByTeam = {};
     cacheRows.forEach((r) => { cacheByTeam[r.team_id] = r; });
 
-    // Acumular por equipo
+    // Acumular por equipo con desglose de ronda 0 (Func/Deco/Bonus)
     const totals = {};
     results.forEach((r) => {
       const tid = r.team?.id || r.team_id;
       const name = r.team?.name || "?";
-      if (!totals[tid]) totals[tid] = { name, pts: 0, rounds: {} };
-      totals[tid].pts += Number(r.computed_points) || 0;
+      if (!totals[tid]) totals[tid] = { name, pts: 0, func: 0, deco: 0, bonus: 0, rondas: 0, rounds: {} };
+      const pts = Number(r.computed_points) || 0;
+      totals[tid].pts += pts;
       const rn = r.round?.round_number ?? "?";
-      totals[tid].rounds[rn] = (totals[tid].rounds[rn] || 0) + (Number(r.computed_points) || 0);
+      if (rn === 0) {
+        totals[tid].func = r.meta?.funcionalidad || 0;
+        totals[tid].deco = r.meta?.decoracion || 0;
+        totals[tid].bonus = r.meta?.bonus || 0;
+      } else {
+        totals[tid].rondas += pts;
+        totals[tid].rounds[rn] = (totals[tid].rounds[rn] || 0) + pts;
+      }
     });
+
+    // Detectar si hay datos de ronda 0 (evaluación prototipo)
+    const hasPreScores = Object.values(totals).some((t) => t.func || t.deco || t.bonus);
 
     // Ordenar por total combinado (sustentación + campo)
     const sorted = Object.entries(totals).sort((a, b) => {
@@ -168,40 +179,58 @@ export async function renderRanking() {
     });
     if (!sorted.length) { container.append(el("div", { class: "empty", text: "Sin resultados aún." })); return; }
 
-    // Obtener rondas únicas
-    const roundNums = [...new Set(results.map((r) => r.round?.round_number).filter((n) => n != null))].sort((a, b) => a - b);
+    // Obtener rondas normales únicas (excluyendo ronda 0)
+    const roundNums = [...new Set(results.map((r) => r.round?.round_number).filter((n) => n != null && n > 0))].sort((a, b) => a - b);
 
-    // Header
-    const headerRow = el("div", {
-      class: "flex",
-      style: "font-size:0.72rem;text-transform:uppercase;letter-spacing:.04em;color:var(--color-text-muted);padding:var(--space-2);gap:var(--space-2);border-bottom:2px solid var(--color-border)",
-    }, [
+    // Header dinámico
+    const headerCols = [
       el("span", { style: "width:28px;text-align:center", text: "#" }),
-      el("span", { style: "flex:1", text: "Equipo" }),
-      el("span", { style: "width:40px;text-align:center", text: "S" }),
-      ...roundNums.map((n) => el("span", { style: "width:38px;text-align:center", text: `R${n}` })),
-      el("span", { style: "width:42px;text-align:center", text: "Camp" }),
-      el("span", { style: "width:50px;text-align:center;font-weight:700", text: "Total" }),
-    ]);
-    container.append(headerRow);
+      el("span", { style: "flex:1;min-width:80px", text: "Equipo" }),
+      el("span", { style: "width:35px;text-align:center", text: "S" }),
+    ];
+    if (hasPreScores) {
+      headerCols.push(
+        el("span", { style: "width:34px;text-align:center", text: "Fn" }),
+        el("span", { style: "width:34px;text-align:center", text: "Dc" }),
+        el("span", { style: "width:30px;text-align:center", text: "Bn" }),
+      );
+    }
+    roundNums.forEach((n) => headerCols.push(el("span", { style: "width:34px;text-align:center", text: `R${n}` })));
+    headerCols.push(
+      el("span", { style: "width:40px;text-align:center", text: "Camp" }),
+      el("span", { style: "width:48px;text-align:center;font-weight:700", text: "Total" }),
+    );
+
+    container.append(el("div", {
+      style: "font-size:0.7rem;text-transform:uppercase;letter-spacing:.04em;color:var(--color-text-muted);padding:var(--space-2);display:flex;gap:var(--space-1);border-bottom:2px solid var(--color-border);overflow-x:auto",
+    }, headerCols));
 
     sorted.forEach(([tid, data], idx) => {
       const cache = cacheByTeam[tid];
       const sustAvg = cache?.sustentation_avg ?? 0;
       const totalCombined = cache?.total_score ?? (sustAvg + data.pts);
 
-      const row = el("div", {
-        class: "flex items-center",
-        style: `padding:var(--space-2);gap:var(--space-2);border-bottom:1px solid var(--color-border);${idx < 3 ? "background:var(--color-surface-2)" : ""}`,
-      }, [
+      const rowCols = [
         el("span", { style: "width:28px;text-align:center;font-weight:700", text: `${idx + 1}` }),
-        el("span", { style: "flex:1;font-weight:500", text: data.name }),
-        el("span", { style: "width:40px;text-align:center;font-size:0.82rem;color:var(--color-text-muted)", text: fmtScore(sustAvg) }),
-        ...roundNums.map((n) => el("span", { style: "width:38px;text-align:center;font-size:0.82rem", text: data.rounds[n] != null ? String(data.rounds[n]) : "—" })),
-        el("span", { style: "width:42px;text-align:center;font-size:0.82rem", text: String(data.pts) }),
-        el("span", { style: "width:50px;text-align:center;font-weight:700;color:var(--color-accent)", text: fmtScore(totalCombined) }),
-      ]);
-      container.append(row);
+        el("span", { style: "flex:1;min-width:80px;font-weight:500;white-space:nowrap;overflow:hidden;text-overflow:ellipsis", text: data.name }),
+        el("span", { style: "width:35px;text-align:center;font-size:0.8rem;color:var(--color-text-muted)", text: fmtScore(sustAvg) }),
+      ];
+      if (hasPreScores) {
+        rowCols.push(
+          el("span", { style: "width:34px;text-align:center;font-size:0.8rem", text: String(data.func) }),
+          el("span", { style: "width:34px;text-align:center;font-size:0.8rem", text: String(data.deco) }),
+          el("span", { style: "width:30px;text-align:center;font-size:0.8rem;color:var(--color-warning)", text: String(data.bonus) }),
+        );
+      }
+      roundNums.forEach((n) => rowCols.push(el("span", { style: "width:34px;text-align:center;font-size:0.8rem", text: data.rounds[n] != null ? String(data.rounds[n]) : "-" })));
+      rowCols.push(
+        el("span", { style: "width:40px;text-align:center;font-size:0.8rem", text: String(data.pts) }),
+        el("span", { style: "width:48px;text-align:center;font-weight:700;color:var(--color-accent)", text: fmtScore(totalCombined) }),
+      );
+
+      container.append(el("div", {
+        style: `display:flex;align-items:center;padding:var(--space-2);gap:var(--space-1);border-bottom:1px solid var(--color-border);overflow-x:auto;${idx < 3 ? "background:var(--color-surface-2)" : ""}`,
+      }, rowCols));
     });
   }
 
