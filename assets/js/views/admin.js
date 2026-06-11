@@ -1059,8 +1059,8 @@ async function renderEvaluatorsAdmin(body) {
   async function openCreate() {
     const nameEl = el("input", { class: "input", type: "text", placeholder: "Ej: Andrea Gómez" });
     const emailEl = el("input", { class: "input", type: "email", placeholder: "jurado@correo.com", autocomplete: "off" });
-    const passEl = el("input", { class: "input", type: "text", value: generatePassword(), autocomplete: "off" });
-    const regenBtn = el("button", { class: "btn btn--ghost btn--sm", type: "button", text: "Generar otra", onclick: () => { passEl.value = generatePassword(); } });
+    const passEl = el("input", { class: "input", type: "text", value: "123456", autocomplete: "off" });
+    const regenBtn = el("button", { class: "btn btn--ghost btn--sm", type: "button", text: "Generar aleatoria", onclick: () => { passEl.value = generatePassword(); } });
     const help = el("p", { class: "field__hint", text: "Al crear la cuenta, el jurado podrá entrar de inmediato en #/jurado con estas credenciales." });
 
     const r = await openModal({
@@ -1071,7 +1071,7 @@ async function renderEvaluatorsAdmin(body) {
         el("div", { class: "field" }, [
           el("label", { class: "field__label", text: "Contraseña inicial" }),
           el("div", { class: "flex gap-2 items-center" }, [passEl, regenBtn]),
-          el("p", { class: "field__hint", text: "El jurado podrá cambiarla después si lo desea." }),
+          el("p", { class: "field__hint", text: "Por defecto: 123456. Al primer ingreso el jurado podrá conservarla o cambiarla." }),
         ]),
         help,
       ]),
@@ -1113,8 +1113,8 @@ async function renderEvaluatorsAdmin(body) {
   async function openResetPassword(ev) {
     const currentEmail = ev.profile?.email || "";
     const emailEl = el("input", { class: "input", type: "email", value: currentEmail, autocomplete: "off", placeholder: "correo@ejemplo.com" });
-    const passEl = el("input", { class: "input", type: "text", value: generatePassword(), autocomplete: "off" });
-    const regenBtn = el("button", { class: "btn btn--ghost btn--sm", type: "button", text: "Generar otra", onclick: () => { passEl.value = generatePassword(); } });
+    const passEl = el("input", { class: "input", type: "text", value: "123456", autocomplete: "off" });
+    const regenBtn = el("button", { class: "btn btn--ghost btn--sm", type: "button", text: "Generar aleatoria", onclick: () => { passEl.value = generatePassword(); } });
     const r = await openModal({
       title: "Credenciales del jurado",
       body: el("div", {}, [
