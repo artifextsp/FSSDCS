@@ -6,6 +6,8 @@ import {
   analyticsGetTeamMembers,
   adminGetTeamCodes,
   adminSetTeamCode,
+  getGradeConfig,
+  listProjectRanking,
 } from "../data.js?v=19";
 
 /* ================================================================
@@ -48,6 +50,37 @@ function getEquivalent(score, scale) {
     if (n >= band.min && n <= band.max) return { label: band.label, equivalent: band.equivalent };
   }
   return { label: "—", equivalent: null };
+}
+
+// ─── Notas académicas (conversión de puntos configurada en BD) ────
+function numOrNull(v) {
+  if (v == null || v === "") return null;
+  const n = Number(v);
+  return Number.isFinite(n) ? n : null;
+}
+
+// Devuelve { nota, label } de la banda en la que cae el puntaje.
+function notaFromBands(points, bands) {
+  if (points == null || !Array.isArray(bands)) return null;
+  for (const b of bands) {
+    if (points >= Number(b.min) && points <= Number(b.max)) return { nota: Number(b.nota), label: b.label || "" };
+  }
+  return null;
+}
+
+// Asigna nota por percentil dentro del proyecto: ordena por ranking y
+// reparte según los tramos de porcentaje (acumulativos sobre el total de equipos).
+function notaFromPercentile(rank, count, tiers) {
+  if (!rank || !count || !Array.isArray(tiers) || !tiers.length) return null;
+  let cumulative = 0;
+  for (let i = 0; i < tiers.length; i++) {
+    cumulative += Number(tiers[i].pct) || 0;
+    const isLast = i === tiers.length - 1;
+    const boundary = isLast ? count : Math.round((count * cumulative) / 100);
+    if (rank <= boundary) return { nota: Number(tiers[i].nota), label: tiers[i].label || "" };
+  }
+  const last = tiers[tiers.length - 1];
+  return { nota: Number(last.nota), label: last.label || "" };
 }
 
 /**
@@ -1317,10 +1350,15 @@ export async function generateTeamPDF(opts) {
     let fieldRankText = "";
     let fieldRankPos = null;
     let totalCampo = 0;
+    let projId = opts.proj?.id || opts.rpcData?.team?.project_id || team.project_id;
+    // Desglose de prototipo (ronda 0): público viene del RPC; admin lo extrae
+    // de los resultados de campo más abajo.
+    let protoFunc = opts.rpcData ? numOrNull(opts.rpcData.funcionalidad) : null;
+    let protoDeco = opts.rpcData ? numOrNull(opts.rpcData.decoracion) : null;
+    let protoBonus = opts.rpcData ? numOrNull(opts.rpcData.bonus) : null;
     try {
       const { listFieldResultsByCompetition, listFieldRounds } = await import("../data.js?v=19");
       const { supabase } = await import("../supabase.js?v=19");
-      let projId = opts.proj?.id || opts.rpcData?.team?.project_id || team.project_id;
       if (!projId && team.id) {
         const { data: teamRow } = await supabase.from("teams").select("project_id").eq("id", team.id).maybeSingle();
         if (teamRow) projId = teamRow.project_id;
@@ -1332,6 +1370,16 @@ export async function generateTeamPDF(opts) {
           const rounds = await listFieldRounds(fc.id);
           const results = await listFieldResultsByCompetition(fc.id);
           const myResults = results.filter((r) => (r.team?.id || r.team_id) === team.id);
+
+          // Capturar desglose de prototipo (ronda 0) para las notas (modo admin)
+          if (protoFunc == null && protoDeco == null && protoBonus == null) {
+            const r0 = myResults.find((r) => Number(r.round?.round_number) === 0);
+            if (r0?.meta) {
+              protoFunc = numOrNull(r0.meta.funcionalidad);
+              protoDeco = numOrNull(r0.meta.decoracion);
+              protoBonus = numOrNull(r0.meta.bonus);
+            }
+          }
 
           if (myResults.length || rounds.length) {
             if (y > 220) { doc.addPage(); y = 20; }
@@ -1385,6 +1433,79 @@ export async function generateTeamPDF(opts) {
     const grandTotal = (teamAvg || 0) + totalCampo;
     doc.text(`TOTAL COMBINADO: ${fmtScore(grandTotal)}`, pageW - margin - 8, y + 14, { align: "right" });
     y += 32;
+
+    // ── Notas Académicas ──────────────────────────────────────
+    try {
+      let gradeConfig = null;
+      if (opts.rpcData) {
+        gradeConfig = opts.rpcData.grade_config || null;
+      } else {
+        try { gradeConfig = await getGradeConfig(team.edition_id || opts.editionId); } catch { /* */ }
+      }
+      if (gradeConfig && Array.isArray(gradeConfig.columns)) {
+        // Ranking dentro del proyecto (para el total por percentil)
+        let projRank = null, projCount = null;
+        if (opts.rpcData) {
+          projRank = opts.rpcData.project_rank;
+          projCount = opts.rpcData.project_team_count;
+        } else if (projId) {
+          try {
+            const pr = await listProjectRanking(projId);
+            projCount = pr.length;
+            const mine = pr.find((r) => r.team_id === team.id);
+            projRank = mine?.project_rank ?? null;
+          } catch { /* */ }
+        }
+
+        const colPoints = {
+          sustentation: teamAvg,
+          funcionalidad: protoFunc,
+          decoracion: protoDeco,
+          bonus: protoBonus,
+          field_total: totalCampo,
+        };
+
+        const notasBody = [];
+        gradeConfig.columns.forEach((col) => {
+          if (!col.enabled) return;
+          const pts = colPoints[col.key];
+          if (pts == null) return; // sin dato disponible → se omite
+          const r = notaFromBands(Number(pts), col.bands || []);
+          notasBody.push([
+            col.label,
+            fmtScore(Number(pts)),
+            r ? fmtScore(r.nota) : "—",
+            r?.label || "—",
+          ]);
+        });
+
+        const totalCfg = gradeConfig.total;
+        if (totalCfg && Array.isArray(totalCfg.tiers) && totalCfg.tiers.length) {
+          const totalPts = opts.rpcData ? Number(opts.rpcData.total_score) : grandTotal;
+          const tr = notaFromPercentile(projRank, projCount, totalCfg.tiers);
+          notasBody.push([
+            { content: totalCfg.label || "Promedio total", styles: { fontStyle: "bold" } },
+            { content: fmtScore(totalPts), styles: { fontStyle: "bold" } },
+            { content: tr ? fmtScore(tr.nota) : "—", styles: { fontStyle: "bold" } },
+            { content: tr?.label || "—", styles: { fontStyle: "bold" } },
+          ]);
+        }
+
+        if (notasBody.length) {
+          if (y > 235) { doc.addPage(); y = 20; }
+          pdfSectionTitle(doc, "Notas Académicas", margin, y); y += 3;
+          doc.autoTable({
+            startY: y, head: [["Criterio", "Puntos", "Nota", "Nivel"]], body: notasBody,
+            styles: { fontSize: 9, cellPadding: 3 },
+            headStyles: { fillColor: [120, 70, 160], textColor: 255, fontStyle: "bold" },
+            alternateRowStyles: { fillColor: [248, 244, 255] },
+            columnStyles: { 1: { halign: "center" }, 2: { halign: "center" }, 3: { halign: "center" } },
+            margin: { left: margin, right: margin }, theme: "striped",
+          });
+          y = doc.lastAutoTable.finalY + 10;
+        }
+      }
+    } catch (e) { console.error("[PDF] notas section error", e); }
 
     // ── Felicitación top 4 ──────────────────────────────────────
     if (fieldRankPos && fieldRankPos <= 4) {

@@ -19,6 +19,7 @@ import { parseFile } from "../parsers.js?v=19";
 import { navigate } from "../router.js?v=19";
 import { renderAnalyticsAdmin } from "./analytics.js?v=19";
 import { renderFieldAdmin } from "./admin_field.js?v=19";
+import { renderGradesAdmin } from "./admin_grades.js?v=19";
 
 export async function renderAdmin({ section = "dashboard", projectId = null, teamId = null } = {}) {
   console.log("[admin] renderAdmin start", { section, projectId, teamId });
@@ -88,7 +89,7 @@ export async function renderAdmin({ section = "dashboard", projectId = null, tea
   ]));
 
   const tabs = el("div", { class: "tabs" });
-  [["dashboard", "Resumen"], ["ediciones", "Ediciones"], ["proyectos", "Proyectos"], ["jurados", "Jurados"], ["campo", "Campo"], ["ranking", "Ranking"], ["analitica", "Analítica"]]
+  [["dashboard", "Resumen"], ["ediciones", "Ediciones"], ["proyectos", "Proyectos"], ["jurados", "Jurados"], ["campo", "Campo"], ["ranking", "Ranking"], ["notas", "Notas"], ["analitica", "Analítica"]]
     .forEach(([k, l]) => tabs.append(el("a", { class: `tabs__btn ${section === k ? "is-active" : ""}`, href: `#/admin/${k}`, text: l })));
   wrap.append(tabs);
 
@@ -101,6 +102,7 @@ export async function renderAdmin({ section = "dashboard", projectId = null, tea
   if (section === "jurados") return renderEvaluatorsAdmin(body);
   if (section === "campo") return renderFieldAdmin(body);
   if (section === "ranking") return renderRankingAdmin(body);
+  if (section === "notas") return renderGradesAdmin(body);
   if (section === "analitica") return renderAnalyticsAdmin(body, getCurrentEdition());
   if (section === "proyecto") return renderProjectAdmin(body, projectId);
   if (section === "team") return renderTeamAdmin(body, teamId);

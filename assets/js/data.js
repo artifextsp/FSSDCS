@@ -802,6 +802,82 @@ export async function upsertActiveConfig({ projectId, phase, methodType, scaleMi
   return data;
 }
 
+/* ---------------- Notas académicas (conversión de puntos) ---------------- */
+
+// Columnas disponibles para convertir a nota y su escala de puntos de referencia.
+export const GRADE_COLUMNS = [
+  { key: "sustentation",  label: "Sustentación",     maxRef: 5 },
+  { key: "funcionalidad", label: "Funcionalidad",    maxRef: 5 },
+  { key: "decoracion",    label: "Decoración",       maxRef: 5 },
+  { key: "bonus",         label: "Bonus",            maxRef: 3 },
+  { key: "field_total",   label: "Concurso (campo)", maxRef: 13 },
+];
+
+export function defaultGradeConfig() {
+  return {
+    columns: [
+      { key: "sustentation", label: "Sustentación", enabled: true, bands: [
+        { min: 0, max: 1.9, nota: 2.0, label: "Bajo" },
+        { min: 2.0, max: 2.9, nota: 3.0, label: "Básico" },
+        { min: 3.0, max: 3.9, nota: 4.0, label: "Alto" },
+        { min: 4.0, max: 5.0, nota: 5.0, label: "Superior" },
+      ] },
+      { key: "funcionalidad", label: "Funcionalidad", enabled: true, bands: [
+        { min: 0, max: 1, nota: 3.0, label: "Básico" },
+        { min: 2, max: 3, nota: 4.0, label: "Alto" },
+        { min: 4, max: 5, nota: 5.0, label: "Superior" },
+      ] },
+      { key: "decoracion", label: "Decoración", enabled: true, bands: [
+        { min: 0, max: 1, nota: 3.0, label: "Básico" },
+        { min: 2, max: 3, nota: 4.0, label: "Alto" },
+        { min: 4, max: 5, nota: 5.0, label: "Superior" },
+      ] },
+      { key: "bonus", label: "Bonus", enabled: false, bands: [
+        { min: 0, max: 0, nota: 3.0, label: "Básico" },
+        { min: 1, max: 2, nota: 4.0, label: "Alto" },
+        { min: 3, max: 3, nota: 5.0, label: "Superior" },
+      ] },
+      { key: "field_total", label: "Concurso (campo)", enabled: false, bands: [
+        { min: 0, max: 4, nota: 3.0, label: "Básico" },
+        { min: 5, max: 9, nota: 4.0, label: "Alto" },
+        { min: 10, max: 13, nota: 5.0, label: "Superior" },
+      ] },
+    ],
+    total: {
+      label: "Promedio total",
+      tiers: [
+        { pct: 40, nota: 5.0, label: "Superior" },
+        { pct: 30, nota: 4.0, label: "Alto" },
+        { pct: 30, nota: 3.0, label: "Básico" },
+      ],
+    },
+  };
+}
+
+export async function getGradeConfig(editionId) {
+  if (!editionId) return defaultGradeConfig();
+  const { data, error } = await supabase
+    .from("grade_report_configs")
+    .select("config")
+    .eq("edition_id", editionId)
+    .maybeSingle();
+  if (error) throw error;
+  const cfg = data?.config;
+  if (!cfg || !cfg.columns) return defaultGradeConfig();
+  return cfg;
+}
+
+export async function saveGradeConfig(editionId, config) {
+  if (!editionId) throw new Error("Falta la edición.");
+  const { data, error } = await supabase
+    .from("grade_report_configs")
+    .upsert({ edition_id: editionId, config, updated_at: new Date().toISOString() }, { onConflict: "edition_id" })
+    .select("config")
+    .single();
+  if (error) throw error;
+  return data?.config;
+}
+
 /* ================== Pruebas de Campo ================== */
 
 export async function listFieldCompetitions(editionId) {
