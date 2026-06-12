@@ -694,6 +694,10 @@ async function renderCombat(container, comp) {
     ]);
   } catch (err) { container.append(el("div", { class: "error-banner", text: "Error: " + err?.message })); return; }
 
+  // Ronda 0 (Prototipo + Bonus): se evalúa aparte; sus puntos suman al acumulado.
+  const evalRound = await ensurePrototypeRound(comp, rounds);
+  rounds = rounds.filter((r) => r.round_number > 0);
+
   container.append(
     el("div", { class: "section-head" }, [
       el("div", {}, [
@@ -705,6 +709,11 @@ async function renderCombat(container, comp) {
         : null,
     ])
   );
+
+  // Sección Prototipo + Bonus (Funcionalidad / Decoración / Bonus)
+  if (evalRound) {
+    container.append(buildPrototypeBonusSection(comp, teams, evalRound, allResults));
+  }
 
   const roundsContainer = el("div", { class: "flex-col gap-4" });
   container.append(roundsContainer);
@@ -849,6 +858,10 @@ async function renderElimination(container, comp) {
     ]);
   } catch (err) { container.append(el("div", { class: "error-banner", text: "Error: " + err?.message })); return; }
 
+  // Ronda 0 (Prototipo + Bonus): se evalúa aparte; sus puntos suman al acumulado.
+  const evalRound = await ensurePrototypeRound(comp, rounds);
+  rounds = rounds.filter((r) => r.round_number > 0);
+
   container.append(
     el("div", { class: "section-head" }, [
       el("div", {}, [
@@ -860,6 +873,11 @@ async function renderElimination(container, comp) {
         : null,
     ])
   );
+
+  // Sección Prototipo + Bonus (Funcionalidad / Decoración / Bonus)
+  if (evalRound) {
+    container.append(buildPrototypeBonusSection(comp, teams, evalRound, allResults));
+  }
 
   const roundsContainer = el("div", { class: "flex-col gap-4" });
   container.append(roundsContainer);
@@ -995,6 +1013,10 @@ async function renderTimedQuantity(container, comp) {
     ]);
   } catch (err) { container.append(el("div", { class: "error-banner", text: "Error: " + err?.message })); return; }
 
+  // Ronda 0 (Prototipo + Bonus): se evalúa aparte; sus puntos suman al acumulado.
+  const evalRound = await ensurePrototypeRound(comp, rounds);
+  rounds = rounds.filter((r) => r.round_number > 0);
+
   let activeRoundIdx = rounds.length ? rounds.length - 1 : -1;
 
   container.append(
@@ -1013,6 +1035,11 @@ async function renderTimedQuantity(container, comp) {
     el("strong", { text: "Puntos por posición: " }),
     ...pointsByPos.map((pts, i) => el("span", { text: `${i + 1}°=${pts}pts  ` })),
   ]));
+
+  // Sección Prototipo + Bonus (Funcionalidad / Decoración / Bonus)
+  if (evalRound) {
+    container.append(buildPrototypeBonusSection(comp, teams, evalRound, allResults));
+  }
 
   const tabBar = el("div", { class: "tabs", style: "margin-bottom:var(--space-3);overflow-x:auto" });
   const roundContent = el("div");
