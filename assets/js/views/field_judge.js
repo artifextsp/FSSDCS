@@ -130,6 +130,100 @@ const STRATEGIES = {
 };
 
 /* ──────────────────────────────────────────────────────────────────
+   PROTOTIPO + BONUS (ronda 0) – sección compartida por las estrategias
+   que evalúan el prototipo antes de las rondas de competencia.
+   Funcionalidad (1-5) · Decoración (1-5) · Bonus especial (0-3)
+   ────────────────────────────────────────────────────────────────── */
+async function ensurePrototypeRound(comp, rounds) {
+  const hasPreScores = (comp.config || {}).pre_scores !== false;
+  if (!hasPreScores) return null;
+  let evalRound = rounds.find((r) => r.round_number === 0);
+  if (!evalRound && comp.status === "active") {
+    try {
+      evalRound = await createFieldRound({ competitionId: comp.id, roundNumber: 0, label: "Prototipo + Bonus" });
+      rounds.unshift(evalRound);
+    } catch { /* puede que ya exista por carrera entre jueces */ }
+  }
+  return evalRound;
+}
+
+function buildPrototypeBonusSection(comp, teams, evalRound, allResults) {
+  const evalSection = el("div", { class: "card mb-4", style: "border:2px solid var(--color-warning);background:linear-gradient(135deg,rgba(234,179,8,0.06) 0%,transparent 60%)" });
+  evalSection.append(el("h3", { style: "margin:0 0 var(--space-2)", text: "Evaluacion Prototipo + Bonus" }));
+  evalSection.append(el("p", { class: "text-muted", style: "font-size:0.82rem;margin:0 0 var(--space-3)" }, [
+    "Funcionalidad (1-5) · Decoracion (1-5) · Bonus especial (0-3)",
+  ]));
+
+  const evalResults = allResults.filter((r) => (r.round?.id || r.round_id) === evalRound.id);
+
+  teams.forEach((team) => {
+    const existing = evalResults.find((r) => (r.team?.id || r.team_id) === team.id);
+    const meta = existing?.meta || {};
+    const func = meta.funcionalidad ?? "";
+    const deco = meta.decoracion ?? "";
+    const bonus = meta.bonus ?? "";
+
+    const row = el("div", { style: "padding:var(--space-2) 0;border-bottom:1px solid var(--color-border)" });
+    const ptsBadge = el("span", { class: "badge", style: "background:var(--color-warning);color:#000", text: `${existing?.computed_points ?? 0} pts` });
+    row.append(el("div", { style: "font-weight:600;margin-bottom:4px;display:flex;justify-content:space-between;align-items:center" }, [
+      el("span", { text: team.name }),
+      ptsBadge,
+    ]));
+
+    const inputsRow = el("div", { class: "flex gap-3", style: "flex-wrap:wrap;align-items:center" });
+
+    const funcInput = el("input", {
+      type: "number", min: "1", max: "5", step: "1", class: "input",
+      style: "width:60px;text-align:center", value: func ? String(func) : "",
+      placeholder: "1-5", disabled: comp.status !== "active",
+    });
+    const decoInput = el("input", {
+      type: "number", min: "1", max: "5", step: "1", class: "input",
+      style: "width:60px;text-align:center", value: deco ? String(deco) : "",
+      placeholder: "1-5", disabled: comp.status !== "active",
+    });
+    const bonusInput = el("input", {
+      type: "number", min: "0", max: "3", step: "1", class: "input",
+      style: "width:60px;text-align:center", value: bonus ? String(bonus) : "",
+      placeholder: "0-3", disabled: comp.status !== "active",
+    });
+
+    const saveBtn = el("button", {
+      class: "btn btn--accent btn--sm", text: "Guardar",
+      disabled: comp.status !== "active",
+      onclick: async () => {
+        const f = Math.min(5, Math.max(0, parseInt(funcInput.value) || 0));
+        const d = Math.min(5, Math.max(0, parseInt(decoInput.value) || 0));
+        const b = Math.min(3, Math.max(0, parseInt(bonusInput.value) || 0));
+        const pts = f + d + b;
+        const newMeta = { funcionalidad: f, decoracion: d, bonus: b };
+        try {
+          saveBtn.disabled = true;
+          await upsertFieldResult({ roundId: evalRound.id, teamId: team.id, rawValue: pts, computedPoints: pts, meta: newMeta });
+          const idx = allResults.findIndex((r) => (r.round?.id || r.round_id) === evalRound.id && (r.team?.id || r.team_id) === team.id);
+          const nr = { round_id: evalRound.id, round: { id: evalRound.id, round_number: 0 }, team_id: team.id, team: { id: team.id, name: team.name }, raw_value: pts, computed_points: pts, meta: newMeta };
+          if (idx >= 0) allResults[idx] = nr; else allResults.push(nr);
+          ptsBadge.textContent = `${pts} pts`;
+          toast(`${team.name}: ${pts} pts (F:${f} D:${d} B:${b})`, "success");
+        } catch (err) { toast(err?.message, "error"); }
+        finally { saveBtn.disabled = comp.status !== "active"; }
+      },
+    });
+
+    inputsRow.append(
+      el("label", { style: "font-size:0.8rem;display:flex;align-items:center;gap:4px" }, [el("span", { text: "Func:" }), funcInput]),
+      el("label", { style: "font-size:0.8rem;display:flex;align-items:center;gap:4px" }, [el("span", { text: "Deco:" }), decoInput]),
+      el("label", { style: "font-size:0.8rem;display:flex;align-items:center;gap:4px" }, [el("span", { text: "Bonus:" }), bonusInput]),
+      saveBtn,
+    );
+    row.append(inputsRow);
+    evalSection.append(row);
+  });
+
+  return evalSection;
+}
+
+/* ──────────────────────────────────────────────────────────────────
    TIME TRIAL: menor tiempo → ranking por posición → puntos automáticos
    ────────────────────────────────────────────────────────────────── */
 
@@ -147,6 +241,11 @@ async function renderTimeTrial(container, comp) {
       listFieldResultsByCompetition(comp.id),
     ]);
   } catch (err) { container.append(el("div", { class: "error-banner", text: "Error: " + err?.message })); return; }
+
+  // Ronda 0 (Prototipo + Bonus): se evalúa aparte y no entra en las pestañas
+  // de tiempo. Sus puntos sí suman al ranking acumulado.
+  const evalRound = await ensurePrototypeRound(comp, rounds);
+  rounds = rounds.filter((r) => r.round_number > 0);
 
   let activeRoundIdx = rounds.length ? rounds.length - 1 : -1;
 
@@ -168,6 +267,11 @@ async function renderTimeTrial(container, comp) {
     el("strong", { text: "Puntos por posición: " }),
     ...positions.map((p) => el("span", { text: `${p.place}° = ${p.points}pts  ` })),
   ]));
+
+  // Sección Prototipo + Bonus (Funcionalidad / Decoración / Bonus)
+  if (evalRound) {
+    container.append(buildPrototypeBonusSection(comp, teams, evalRound, allResults));
+  }
 
   // Tabs de rondas + contenido
   const tabBar = el("div", { class: "tabs", style: "margin-bottom:var(--space-3);overflow-x:auto" });
@@ -397,7 +501,6 @@ async function renderTimeTrial(container, comp) {
 async function renderPerformance(container, comp) {
   const config = comp.config || {};
   const events = config.events || [{ key: "event_1", label: "Evento 1", points: 2 }];
-  const hasPreScores = config.pre_scores !== false;
 
   let teams, rounds, allResults;
   try {
@@ -409,13 +512,7 @@ async function renderPerformance(container, comp) {
   } catch (err) { container.append(el("div", { class: "error-banner", text: "Error: " + err?.message })); return; }
 
   // Asegurar ronda 0 (Evaluación Prototipo + Bonus)
-  let evalRound = rounds.find((r) => r.round_number === 0);
-  if (!evalRound && comp.status === "active" && hasPreScores) {
-    try {
-      evalRound = await createFieldRound({ competitionId: comp.id, roundNumber: 0, label: "Prototipo + Bonus" });
-      rounds.unshift(evalRound);
-    } catch { /* puede que ya exista */ }
-  }
+  const evalRound = await ensurePrototypeRound(comp, rounds);
   const normalRounds = rounds.filter((r) => r.round_number > 0);
 
   let activeRoundIdx = normalRounds.length ? normalRounds.length - 1 : -1;
@@ -438,78 +535,8 @@ async function renderPerformance(container, comp) {
   ]));
 
   // ── Sección: Evaluación Prototipo + Bonus ──────────────────────
-  if (hasPreScores && evalRound) {
-    const evalSection = el("div", { class: "card mb-4", style: "border:2px solid var(--color-warning);background:linear-gradient(135deg,rgba(234,179,8,0.06) 0%,transparent 60%)" });
-    evalSection.append(el("h3", { style: "margin:0 0 var(--space-2)", text: "Evaluacion Prototipo + Bonus" }));
-    evalSection.append(el("p", { class: "text-muted", style: "font-size:0.82rem;margin:0 0 var(--space-3)" }, [
-      "Funcionalidad (1-5) · Decoracion (1-5) · Bonus especial (0-3)",
-    ]));
-
-    const evalResults = allResults.filter((r) => (r.round?.id || r.round_id) === evalRound.id);
-
-    teams.forEach((team) => {
-      const existing = evalResults.find((r) => (r.team?.id || r.team_id) === team.id);
-      const meta = existing?.meta || {};
-      const func = meta.funcionalidad ?? "";
-      const deco = meta.decoracion ?? "";
-      const bonus = meta.bonus ?? "";
-
-      const row = el("div", { style: "padding:var(--space-2) 0;border-bottom:1px solid var(--color-border)" });
-      row.append(el("div", { style: "font-weight:600;margin-bottom:4px;display:flex;justify-content:space-between;align-items:center" }, [
-        el("span", { text: team.name }),
-        el("span", { class: "badge", style: "background:var(--color-warning);color:#000", text: `${existing?.computed_points ?? 0} pts` }),
-      ]));
-
-      const inputsRow = el("div", { class: "flex gap-3", style: "flex-wrap:wrap;align-items:center" });
-
-      const funcInput = el("input", {
-        type: "number", min: "1", max: "5", step: "1", class: "input",
-        style: "width:60px;text-align:center", value: func ? String(func) : "",
-        placeholder: "1-5", disabled: comp.status !== "active",
-      });
-      const decoInput = el("input", {
-        type: "number", min: "1", max: "5", step: "1", class: "input",
-        style: "width:60px;text-align:center", value: deco ? String(deco) : "",
-        placeholder: "1-5", disabled: comp.status !== "active",
-      });
-      const bonusInput = el("input", {
-        type: "number", min: "0", max: "3", step: "1", class: "input",
-        style: "width:60px;text-align:center", value: bonus ? String(bonus) : "",
-        placeholder: "0-3", disabled: comp.status !== "active",
-      });
-
-      const saveBtn = el("button", {
-        class: "btn btn--accent btn--sm", text: "Guardar",
-        disabled: comp.status !== "active",
-        onclick: async () => {
-          const f = Math.min(5, Math.max(0, parseInt(funcInput.value) || 0));
-          const d = Math.min(5, Math.max(0, parseInt(decoInput.value) || 0));
-          const b = Math.min(3, Math.max(0, parseInt(bonusInput.value) || 0));
-          const pts = f + d + b;
-          const newMeta = { funcionalidad: f, decoracion: d, bonus: b };
-          try {
-            saveBtn.disabled = true;
-            await upsertFieldResult({ roundId: evalRound.id, teamId: team.id, rawValue: pts, computedPoints: pts, meta: newMeta });
-            const idx = allResults.findIndex((r) => (r.round?.id || r.round_id) === evalRound.id && (r.team?.id || r.team_id) === team.id);
-            const nr = { round_id: evalRound.id, round: { id: evalRound.id, round_number: 0 }, team_id: team.id, team: { id: team.id, name: team.name }, raw_value: pts, computed_points: pts, meta: newMeta };
-            if (idx >= 0) allResults[idx] = nr; else allResults.push(nr);
-            toast(`${team.name}: ${pts} pts (F:${f} D:${d} B:${b})`, "success");
-          } catch (err) { toast(err?.message, "error"); }
-          finally { saveBtn.disabled = comp.status !== "active"; }
-        },
-      });
-
-      inputsRow.append(
-        el("label", { style: "font-size:0.8rem;display:flex;align-items:center;gap:4px" }, [el("span", { text: "Func:" }), funcInput]),
-        el("label", { style: "font-size:0.8rem;display:flex;align-items:center;gap:4px" }, [el("span", { text: "Deco:" }), decoInput]),
-        el("label", { style: "font-size:0.8rem;display:flex;align-items:center;gap:4px" }, [el("span", { text: "Bonus:" }), bonusInput]),
-        saveBtn,
-      );
-      row.append(inputsRow);
-      evalSection.append(row);
-    });
-
-    container.append(evalSection);
+  if (evalRound) {
+    container.append(buildPrototypeBonusSection(comp, teams, evalRound, allResults));
   }
 
   // ── Tabs de rondas normales ────────────────────────────────────
