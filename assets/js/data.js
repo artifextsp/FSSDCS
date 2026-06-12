@@ -805,12 +805,12 @@ export async function upsertActiveConfig({ projectId, phase, methodType, scaleMi
 /* ---------------- Notas académicas (conversión de puntos) ---------------- */
 
 // Columnas disponibles para convertir a nota y su escala de puntos de referencia.
+// Las pruebas de campo NO se incluyen aquí: se califican por ranking (ver "total").
 export const GRADE_COLUMNS = [
-  { key: "sustentation",  label: "Sustentación",     maxRef: 5 },
-  { key: "funcionalidad", label: "Funcionalidad",    maxRef: 5 },
-  { key: "decoracion",    label: "Decoración",       maxRef: 5 },
-  { key: "bonus",         label: "Bonus",            maxRef: 3 },
-  { key: "field_total",   label: "Concurso (campo)", maxRef: 13 },
+  { key: "sustentation",  label: "Sustentación",  maxRef: 5 },
+  { key: "funcionalidad", label: "Funcionalidad", maxRef: 5 },
+  { key: "decoracion",    label: "Decoración",    maxRef: 5 },
+  { key: "bonus",         label: "Bonus",         maxRef: 3 },
 ];
 
 export function defaultGradeConfig() {
@@ -837,14 +837,9 @@ export function defaultGradeConfig() {
         { min: 1, max: 2, nota: 4.0, label: "Alto" },
         { min: 3, max: 3, nota: 5.0, label: "Superior" },
       ] },
-      { key: "field_total", label: "Concurso (campo)", enabled: false, bands: [
-        { min: 0, max: 4, nota: 3.0, label: "Básico" },
-        { min: 5, max: 9, nota: 4.0, label: "Alto" },
-        { min: 10, max: 13, nota: 5.0, label: "Superior" },
-      ] },
     ],
     total: {
-      label: "Promedio total",
+      label: "Pruebas de campo",
       tiers: [
         { pct: 40, nota: 5.0, label: "Superior" },
         { pct: 30, nota: 4.0, label: "Alto" },

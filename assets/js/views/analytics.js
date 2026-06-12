@@ -7,7 +7,6 @@ import {
   adminGetTeamCodes,
   adminSetTeamCode,
   getGradeConfig,
-  listProjectRanking,
 } from "../data.js?v=19";
 
 /* ================================================================
@@ -81,6 +80,52 @@ function notaFromPercentile(rank, count, tiers) {
   }
   const last = tiers[tiers.length - 1];
   return { nota: Number(last.nota), label: last.label || "" };
+}
+
+// Devuelve un mapa { teamId: puesto } con el ranking de una ronda concreta.
+// time_trial / timed_quantity: ordenan por valor (menor o mayor según config).
+// resto de tipos: ordenan por puntos obtenidos (mayor es mejor).
+function rankByTeamInRound(roundResults, compType, config) {
+  const lowerTypes = compType === "time_trial" || compType === "timed_quantity";
+  const lowerIsBetter = lowerTypes ? (config?.lower_is_better !== false) : false;
+  const valid = (roundResults || []).filter((r) => r.raw_value != null);
+  const valOf = (r) => (lowerTypes ? Number(r.raw_value) : (Number(r.computed_points) || 0));
+  const sorted = [...valid].sort((a, b) => (lowerTypes && lowerIsBetter ? valOf(a) - valOf(b) : valOf(b) - valOf(a)));
+  const map = {};
+  let rank = 1;
+  for (let i = 0; i < sorted.length; i++) {
+    if (i > 0 && valOf(sorted[i]) !== valOf(sorted[i - 1])) rank = i + 1;
+    map[sorted[i].team?.id || sorted[i].team_id] = rank;
+  }
+  return map;
+}
+
+// Describe en texto cómo se asignan los puntos en cada ronda, según el tipo.
+function describePointCriteria(compType, config) {
+  const cfg = config || {};
+  const lines = [];
+  if (compType === "time_trial") {
+    const positions = cfg.positions || [{ place: 1, points: 10 }, { place: 2, points: 7 }, { place: 3, points: 5 }];
+    positions.forEach((p) => lines.push(`${p.place}° puesto: ${p.points} pts`));
+    lines.push("Demás puestos: 0 pts");
+  } else if (compType === "timed_quantity") {
+    const pts = cfg.points_by_position || [5, 3, 2, 1];
+    pts.forEach((p, i) => lines.push(`${i + 1}° puesto: ${p} pts`));
+    lines.push("Demás puestos: 0 pts");
+  } else if (compType === "performance") {
+    const events = cfg.events || [];
+    if (events.length) {
+      events.forEach((e) => lines.push(`${e.label}: ${e.points} pts`));
+      lines.push("Los puntos por evento son acumulables.");
+    }
+  } else if (compType === "combat") {
+    lines.push(`Victoria: ${cfg.win_points ?? 3} pts`);
+    lines.push(`Empate: ${cfg.draw_points ?? 1} pts`);
+    lines.push(`Derrota: ${cfg.loss_points ?? 0} pts`);
+  } else if (compType === "elimination") {
+    lines.push(`Cada ronda superada: ${cfg.points_per_round_survived ?? 2} pts`);
+  }
+  return lines;
 }
 
 /**
@@ -1273,7 +1318,6 @@ export async function generateTeamPDF(opts) {
     const teamAvg = scored.length
       ? scored.reduce((s, e) => s + Number(e.total_score), 0) / scored.length
       : null;
-    const { label: lvl, equivalent: eq } = getEquivalent(teamAvg, scale);
 
     const { jsPDF } = await loadJsPDF();
     const doc = new jsPDF({ orientation: "portrait", unit: "mm", format: "a4" });
@@ -1295,14 +1339,6 @@ export async function generateTeamPDF(opts) {
     pdfSectionTitle(doc, "Datos del equipo", margin, y); y += 3;
     const teamDataBody = [["Equipo", team.name], ["Proyecto", projName]];
     if (team.grade_label || team.gradeLabel) teamDataBody.push(["Grado", team.grade_label || team.gradeLabel]);
-    if (team.room) teamDataBody.push(["Salón / Sala", team.room]);
-    if (team.presentation_order || team.presentationOrder)
-      teamDataBody.push(["Orden de presentación", String(team.presentation_order || team.presentationOrder)]);
-    teamDataBody.push(
-      ["Puntaje promedio obtenido", fmtScore(teamAvg)],
-      ["Equivalencia académica", lvl],
-      ["Calificación equivalente", eq ? fmtScore(eq) : "—"]
-    );
     doc.autoTable({
       startY: y, head: [["Campo", "Valor"]], body: teamDataBody,
       styles: { fontSize: 9, cellPadding: 3 },
@@ -1349,6 +1385,7 @@ export async function generateTeamPDF(opts) {
     // ── Puntajes de pruebas de campo ──────────────────────────
     let fieldRankText = "";
     let fieldRankPos = null;
+    let fieldTeamCount = null;
     let totalCampo = 0;
     let projId = opts.proj?.id || opts.rpcData?.team?.project_id || team.project_id;
     // Desglose de prototipo (ronda 0): público viene del RPC; admin lo extrae
@@ -1387,25 +1424,49 @@ export async function generateTeamPDF(opts) {
 
             const roundRows = rounds.map((rd) => {
               const res = myResults.find((r) => (r.round?.id || r.round_id) === rd.id);
-              return [rd.label || `Ronda ${rd.round_number}`, res ? String(res.raw_value ?? "—") : "—", res ? `${res.computed_points} pts` : "0 pts"];
+              let puestoCell = "—";
+              if (Number(rd.round_number) !== 0 && res && res.raw_value != null) {
+                const roundResults = results.filter((r) => (r.round?.id || r.round_id) === rd.id);
+                const rankMap = rankByTeamInRound(roundResults, fc.competition_type, fc.config);
+                const myRank = rankMap[team.id];
+                if (myRank) puestoCell = `${myRank}°`;
+              }
+              return [
+                rd.label || `Ronda ${rd.round_number}`,
+                res ? String(res.raw_value ?? "—") : "—",
+                puestoCell,
+                res ? `${res.computed_points} pts` : "0 pts",
+              ];
             });
             totalCampo = myResults.reduce((s, r) => s + (Number(r.computed_points) || 0), 0);
-            roundRows.push(["TOTAL CAMPO", "", { content: `${totalCampo} pts`, styles: { fontStyle: "bold" } }]);
+            roundRows.push(["TOTAL CAMPO", "", "", { content: `${totalCampo} pts`, styles: { fontStyle: "bold" } }]);
 
             doc.autoTable({
-              startY: y, head: [["Ronda", "Valor registrado", "Puntos obtenidos"]], body: roundRows,
+              startY: y, head: [["Ronda", "Valor registrado", "Puesto", "Puntos obtenidos"]], body: roundRows,
               styles: { fontSize: 9, cellPadding: 3 },
               headStyles: { fillColor: [34, 120, 60], textColor: 255, fontStyle: "bold" },
               alternateRowStyles: { fillColor: [240, 255, 244] },
-              columnStyles: { 1: { halign: "center" }, 2: { halign: "center" } },
+              columnStyles: { 1: { halign: "center" }, 2: { halign: "center" }, 3: { halign: "center" } },
               margin: { left: margin, right: margin }, theme: "striped",
             });
             y = doc.lastAutoTable.finalY + 6;
+
+            // Criterio de asignación de puntos por ronda
+            const critLines = describePointCriteria(fc.competition_type, fc.config);
+            if (critLines.length) {
+              if (y > 255) { doc.addPage(); y = 20; }
+              doc.setFont("helvetica", "bold"); doc.setFontSize(8.5); doc.setTextColor(34, 120, 60);
+              doc.text("Criterio de asignación de puntos por ronda:", margin, y); y += 4.5;
+              doc.setFont("helvetica", "normal"); doc.setFontSize(8); doc.setTextColor(70, 70, 70);
+              critLines.forEach((ln) => { doc.text(`•  ${ln}`, margin + 2, y); y += 4; });
+              y += 3;
+            }
 
             // Ranking del equipo en campo
             const allTeamTotals = {};
             results.forEach((r) => { const tid = r.team?.id || r.team_id; allTeamTotals[tid] = (allTeamTotals[tid] || 0) + (Number(r.computed_points) || 0); });
             const sorted = Object.entries(allTeamTotals).sort((a, b) => b[1] - a[1]);
+            fieldTeamCount = sorted.length;
             let rank = 1;
             for (let i = 0; i < sorted.length; i++) {
               if (i > 0 && sorted[i][1] < sorted[i - 1][1]) rank = i + 1;
@@ -1423,17 +1484,6 @@ export async function generateTeamPDF(opts) {
       }
     } catch (e) { console.error("[PDF] campo section error", e); }
 
-    // ── Resultado final destacado ─────────────────────────────
-    if (y > 250) { doc.addPage(); y = 20; }
-    doc.setFillColor(30, 50, 120);
-    doc.roundedRect(margin, y, pageW - margin * 2, 24, 4, 4, "F");
-    doc.setFont("helvetica", "bold"); doc.setFontSize(10); doc.setTextColor(255, 255, 255);
-    doc.text(`Sustentación: ${fmtScore(teamAvg)} → ${lvl}`, margin + 8, y + 9);
-    if (totalCampo > 0) doc.text(`Campo: ${totalCampo} pts`, margin + 8, y + 18);
-    const grandTotal = (teamAvg || 0) + totalCampo;
-    doc.text(`TOTAL COMBINADO: ${fmtScore(grandTotal)}`, pageW - margin - 8, y + 14, { align: "right" });
-    y += 32;
-
     // ── Notas Académicas ──────────────────────────────────────
     try {
       let gradeConfig = null;
@@ -1443,31 +1493,16 @@ export async function generateTeamPDF(opts) {
         try { gradeConfig = await getGradeConfig(team.edition_id || opts.editionId); } catch { /* */ }
       }
       if (gradeConfig && Array.isArray(gradeConfig.columns)) {
-        // Ranking dentro del proyecto (para el total por percentil)
-        let projRank = null, projCount = null;
-        if (opts.rpcData) {
-          projRank = opts.rpcData.project_rank;
-          projCount = opts.rpcData.project_team_count;
-        } else if (projId) {
-          try {
-            const pr = await listProjectRanking(projId);
-            projCount = pr.length;
-            const mine = pr.find((r) => r.team_id === team.id);
-            projRank = mine?.project_rank ?? null;
-          } catch { /* */ }
-        }
-
         const colPoints = {
           sustentation: teamAvg,
           funcionalidad: protoFunc,
           decoracion: protoDeco,
           bonus: protoBonus,
-          field_total: totalCampo,
         };
 
         const notasBody = [];
         gradeConfig.columns.forEach((col) => {
-          if (!col.enabled) return;
+          if (!col.enabled || col.key === "field_total") return; // campo se califica por ranking, abajo
           const pts = colPoints[col.key];
           if (pts == null) return; // sin dato disponible → se omite
           const r = notaFromBands(Number(pts), col.bands || []);
@@ -1479,30 +1514,46 @@ export async function generateTeamPDF(opts) {
           ]);
         });
 
+        // Fila de Pruebas de campo: calificación según ranking de campo (percentil)
         const totalCfg = gradeConfig.total;
-        if (totalCfg && Array.isArray(totalCfg.tiers) && totalCfg.tiers.length) {
-          const totalPts = opts.rpcData ? Number(opts.rpcData.total_score) : grandTotal;
-          const tr = notaFromPercentile(projRank, projCount, totalCfg.tiers);
+        const hasTiers = totalCfg && Array.isArray(totalCfg.tiers) && totalCfg.tiers.length;
+        if (hasTiers && fieldRankPos && fieldTeamCount) {
+          const fr = notaFromPercentile(fieldRankPos, fieldTeamCount, totalCfg.tiers);
           notasBody.push([
-            { content: totalCfg.label || "Promedio total", styles: { fontStyle: "bold" } },
-            { content: fmtScore(totalPts), styles: { fontStyle: "bold" } },
-            { content: tr ? fmtScore(tr.nota) : "—", styles: { fontStyle: "bold" } },
-            { content: tr?.label || "—", styles: { fontStyle: "bold" } },
+            { content: "Pruebas de campo", styles: { fontStyle: "bold" } },
+            { content: `${totalCampo} pts`, styles: { fontStyle: "bold" } },
+            { content: fr ? fmtScore(fr.nota) : "—", styles: { fontStyle: "bold" } },
+            { content: fr?.label || "—", styles: { fontStyle: "bold" } },
           ]);
         }
 
         if (notasBody.length) {
-          if (y > 235) { doc.addPage(); y = 20; }
+          if (y > 230) { doc.addPage(); y = 20; }
           pdfSectionTitle(doc, "Notas Académicas", margin, y); y += 3;
           doc.autoTable({
-            startY: y, head: [["Criterio", "Puntos", "Nota", "Nivel"]], body: notasBody,
+            startY: y, head: [["Nota", "Puntos", "Calificación", "Nivel"]], body: notasBody,
             styles: { fontSize: 9, cellPadding: 3 },
             headStyles: { fillColor: [120, 70, 160], textColor: 255, fontStyle: "bold" },
             alternateRowStyles: { fillColor: [248, 244, 255] },
             columnStyles: { 1: { halign: "center" }, 2: { halign: "center" }, 3: { halign: "center" } },
             margin: { left: margin, right: margin }, theme: "striped",
           });
-          y = doc.lastAutoTable.finalY + 10;
+          y = doc.lastAutoTable.finalY + 6;
+
+          // Nota aclaratoria sobre la distribución de la calificación de campo
+          if (hasTiers) {
+            if (y > 250) { doc.addPage(); y = 20; }
+            const intro = `La calificación de Pruebas de campo se asigna según la siguiente distribución respecto a la clasificación (ranking) de las pruebas de campo${fieldRankPos && fieldTeamCount ? ` — este equipo obtuvo el puesto ${fieldRankPos} de ${fieldTeamCount}` : ""}:`;
+            doc.setFont("helvetica", "italic"); doc.setFontSize(8); doc.setTextColor(90, 90, 90);
+            const wrapped = doc.splitTextToSize(intro, pageW - margin * 2);
+            doc.text(wrapped, margin, y); y += wrapped.length * 4 + 1;
+            doc.setFont("helvetica", "normal"); doc.setTextColor(70, 70, 70);
+            totalCfg.tiers.forEach((t) => {
+              doc.text(`•  ${t.pct}% de los equipos mejor clasificados → ${fmtScore(t.nota)}${t.label ? ` (${t.label})` : ""}`, margin + 2, y);
+              y += 4;
+            });
+            y += 6;
+          }
         }
       }
     } catch (e) { console.error("[PDF] notas section error", e); }

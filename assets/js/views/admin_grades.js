@@ -33,7 +33,7 @@ export async function renderGradesAdmin(body) {
   body.append(el("div", { class: "section-head" }, [
     el("div", {}, [
       el("h2", { text: "Notas académicas" }),
-      el("p", { class: "text-muted", text: "Define qué columnas se convierten en nota y con qué equivalencia. El total se reparte por porcentajes dentro de cada proyecto." }),
+      el("p", { class: "text-muted", text: "Define qué columnas se convierten en nota por rangos de puntos (sustentación, funcionalidad, decoración, bonus). Las pruebas de campo se califican por ranking dentro de cada proyecto." }),
     ]),
     el("button", { class: "btn btn--ghost btn--sm", text: "Restaurar valores por defecto", onclick: async () => {
       config = defaultGradeConfig();
@@ -183,8 +183,8 @@ function buildTotalCard(total) {
   const addBtn = el("button", { class: "btn btn--ghost btn--sm mt-2", type: "button", text: "+ Agregar tramo", onclick: () => { addTierRow(); recalcHint(); } });
 
   const node = el("div", { class: "card mt-4", style: "border:2px solid var(--color-accent)" }, [
-    el("h3", { style: "margin:0 0 var(--space-1)", text: "Promedio total — distribución por porcentajes" }),
-    el("p", { class: "text-muted", style: "font-size:0.8rem;margin:0", text: "Dentro de cada proyecto, los equipos se ordenan por puntaje total. El primer tramo (de mejores) recibe su nota, el siguiente tramo la suya, y así. Los integrantes heredan la nota de su equipo." }),
+    el("h3", { style: "margin:0 0 var(--space-1)", text: "Pruebas de campo — distribución por ranking" }),
+    el("p", { class: "text-muted", style: "font-size:0.8rem;margin:0", text: "La calificación de las pruebas de campo se asigna según la clasificación general (ranking) dentro de cada proyecto: los equipos se ordenan por puntaje total de campo, el primer tramo (los mejores) recibe su nota, el siguiente tramo la suya, y así. Los integrantes heredan la nota de su equipo. Esta distribución también se imprime como nota aclaratoria en el PDF." }),
     tiersWrap,
     addBtn,
     sumHint,
