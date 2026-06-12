@@ -7,6 +7,7 @@ import {
   adminGetTeamCodes,
   adminSetTeamCode,
   getGradeConfig,
+  listProjectRanking,
 } from "../data.js?v=19";
 
 /* ================================================================
@@ -1558,24 +1559,39 @@ export async function generateTeamPDF(opts) {
       }
     } catch (e) { console.error("[PDF] notas section error", e); }
 
-    // ── Felicitación top 4 ──────────────────────────────────────
-    if (fieldRankPos && fieldRankPos <= 4) {
-      if (y > 240) { doc.addPage(); y = 20; }
-      doc.setFillColor(255, 215, 0);
-      doc.roundedRect(margin, y, pageW - margin * 2, 30, 4, 4, "F");
-      doc.setFont("helvetica", "bold"); doc.setFontSize(13); doc.setTextColor(30, 30, 30);
-      doc.text("¡FELICITACIONES!", pageW / 2, y + 11, { align: "center" });
-      doc.setFontSize(9); doc.setFont("helvetica", "normal");
-      doc.text(
-        `El equipo "${team.name}" obtuvo el puesto #${fieldRankPos} en la competencia de campo.`,
-        pageW / 2, y + 19, { align: "center" }
-      );
-      doc.text(
-        "Este reconocimiento certifica su destacada participación en la Feria STEAM.",
-        pageW / 2, y + 25, { align: "center" }
-      );
-      y += 38;
-    }
+    // ── Felicitación según ranking general del proyecto ─────────
+    // Top 5 por proyecto; si el proyecto tiene más de 15 equipos, top 7.
+    try {
+      let generalRank = null, generalCount = null;
+      if (opts.rpcData) {
+        generalRank = opts.rpcData.project_rank;
+        generalCount = opts.rpcData.project_team_count;
+      } else if (projId) {
+        const pr = await listProjectRanking(projId);
+        generalCount = pr.length;
+        const mine = pr.find((r) => r.team_id === team.id);
+        generalRank = mine?.project_rank ?? null;
+      }
+
+      const topThreshold = (generalCount && generalCount > 15) ? 7 : 5;
+      if (generalRank && generalRank <= topThreshold) {
+        if (y > 240) { doc.addPage(); y = 20; }
+        doc.setFillColor(255, 215, 0);
+        doc.roundedRect(margin, y, pageW - margin * 2, 30, 4, 4, "F");
+        doc.setFont("helvetica", "bold"); doc.setFontSize(13); doc.setTextColor(30, 30, 30);
+        doc.text("¡FELICITACIONES!", pageW / 2, y + 11, { align: "center" });
+        doc.setFontSize(9); doc.setFont("helvetica", "normal");
+        doc.text(
+          `El equipo "${team.name}" obtuvo el puesto #${generalRank} en la clasificación general de su proyecto.`,
+          pageW / 2, y + 19, { align: "center" }
+        );
+        doc.text(
+          "Este reconocimiento certifica su destacada participación en la Feria STEAM.",
+          pageW / 2, y + 25, { align: "center" }
+        );
+        y += 38;
+      }
+    } catch (e) { console.error("[PDF] felicitación section error", e); }
 
     // ── Observaciones / feedback (jurado anónimo) ─────────────
     const evalsWithObs = scored.filter((ev) =>
