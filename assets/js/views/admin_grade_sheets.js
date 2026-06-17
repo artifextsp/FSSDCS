@@ -298,11 +298,15 @@ async function buildGradeData(edition) {
   (gradeConfig.columns || []).forEach((c) => { colConfig[c.key] = c; });
   const totalTiers = gradeConfig.total?.tiers || [];
 
+  // Mapa de proyectos para heredar grade_label
+  const projectMap = Object.fromEntries(projects.map((p) => [p.id, p]));
+
   // Construir lista de estudiantes con sus 4 notas
   const studentsByGrade = {};
 
   for (const team of allTeams) {
-    const grade = team.grade_label || "Sin grado";
+    const proj = projectMap[team.project_id];
+    const grade = team.grade_label || proj?.grade_label || "Sin grado";
     if (!studentsByGrade[grade]) studentsByGrade[grade] = [];
 
     const teamMembers = membersByTeam[team.id] || [];
@@ -342,7 +346,7 @@ async function buildGradeData(edition) {
       studentsByGrade[grade].push({
         fullName: member.full_name,
         teamName: team.name,
-        projectName: projects.find((p) => p.id === team.project_id)?.name || "",
+        projectName: proj?.name || "",
         gradeLabel: grade,
         notaSustentacion,
         notaFuncionalidad,
