@@ -314,13 +314,25 @@ async function buildGradeData(edition) {
   // Mapa de proyectos para heredar grade_label
   const projectMap = Object.fromEntries(projects.map((p) => [p.id, p]));
 
+  // Para equipos sin grade_label propio, heredar el grado de los equipos
+  // hermanos si todos comparten el mismo grado dentro del proyecto.
+  const gradesByProject = {};
+  for (const team of allTeams) {
+    if (!gradesByProject[team.project_id]) gradesByProject[team.project_id] = new Set();
+    if (team.grade_label) gradesByProject[team.project_id].add(team.grade_label);
+  }
+
   // Construir lista de estudiantes con sus 4 notas
   const studentsByGrade = {};
 
   for (const team of allTeams) {
-    if (!team.grade_label) continue;
+    let grade = team.grade_label;
+    if (!grade) {
+      const siblings = gradesByProject[team.project_id];
+      if (siblings && siblings.size === 1) grade = [...siblings][0];
+    }
+    if (!grade) continue;
     const proj = projectMap[team.project_id];
-    const grade = team.grade_label;
     if (!studentsByGrade[grade]) studentsByGrade[grade] = [];
 
     const teamMembers = membersByTeam[team.id] || [];
