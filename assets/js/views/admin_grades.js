@@ -58,11 +58,22 @@ export async function renderGradesAdmin(body) {
   const totalCard = buildTotalCard(config.total || { label: "Promedio total", tiers: [] });
   body.append(totalCard.node);
 
+  // ── Editor de equivalencias del promedio ───────────────────────
+  const defaultPromedio = { bands: [
+    { min: 1.0, max: 2.4, label: "Bajo", equivalencia: 20 },
+    { min: 2.5, max: 3.4, label: "Básico", equivalencia: 35 },
+    { min: 3.5, max: 4.4, label: "Alto", equivalencia: 42 },
+    { min: 4.5, max: 5.0, label: "Superior", equivalencia: 48 },
+  ] };
+  const promedioCard = buildPromedioCard(config.promedio || defaultPromedio);
+  body.append(promedioCard.node);
+
   // ── Guardar ─────────────────────────────────────────────────────
   const saveBtn = el("button", { class: "btn btn--primary btn--lg mt-5", text: "Guardar configuración", onclick: async () => {
     const newConfig = {
       columns: columnCards.map((c) => c.serialize()),
       total: totalCard.serialize(),
+      promedio: promedioCard.serialize(),
     };
     saveBtn.disabled = true;
     saveBtn.textContent = "Guardando…";
@@ -193,5 +204,52 @@ function buildTotalCard(total) {
   return {
     node,
     serialize: () => ({ label: total.label || "Promedio total", tiers: tierRows.map((r) => r.read()) }),
+  };
+}
+
+/* ---------------- Card de equivalencias del promedio ---------------- */
+function buildPromedioCard(promedio) {
+  const bandsWrap = el("div", { class: "flex-col gap-2 mt-3" });
+  const bandRows = [];
+
+  function addBandRow(band = { min: 0, max: 0, label: "", equivalencia: 0 }) {
+    const minEl = el("input", { class: "input", type: "number", step: "0.1", value: String(band.min ?? 0), style: "width:80px;text-align:center" });
+    const maxEl = el("input", { class: "input", type: "number", step: "0.1", value: String(band.max ?? 0), style: "width:80px;text-align:center" });
+    const labelEl = el("input", { class: "input", type: "text", value: band.label || "", placeholder: "Nivel", style: "width:120px" });
+    const eqEl = el("input", { class: "input", type: "number", step: "1", value: String(band.equivalencia ?? 0), style: "width:90px;text-align:center;font-weight:700;font-size:1.1rem" });
+    const row = el("div", { class: "flex gap-2 items-center", style: "flex-wrap:wrap" }, [
+      el("span", { class: "text-muted", style: "font-size:0.78rem", text: "Promedio desde" }), minEl,
+      el("span", { class: "text-muted", style: "font-size:0.78rem", text: "hasta" }), maxEl,
+      el("span", { class: "text-muted", style: "font-size:0.78rem", text: "→" }), labelEl,
+      el("span", { class: "text-muted", style: "font-size:0.78rem", text: "= puntaje" }), eqEl,
+      el("button", { class: "btn btn--danger btn--sm", type: "button", text: "✕", onclick: () => {
+        const i = bandRows.indexOf(ref); if (i >= 0) bandRows.splice(i, 1);
+        row.remove();
+      } }),
+    ]);
+    const ref = { row, read: () => ({
+      min: parseFloat(minEl.value) || 0,
+      max: parseFloat(maxEl.value) || 0,
+      label: labelEl.value.trim(),
+      equivalencia: parseFloat(eqEl.value) || 0,
+    }) };
+    bandRows.push(ref);
+    bandsWrap.append(row);
+  }
+
+  (promedio.bands || []).forEach((b) => addBandRow(b));
+
+  const addBtn = el("button", { class: "btn btn--ghost btn--sm mt-2", type: "button", text: "+ Agregar nivel", onclick: () => addBandRow() });
+
+  const node = el("div", { class: "card mt-4", style: "border:2px solid var(--color-primary)" }, [
+    el("h3", { style: "margin:0 0 var(--space-1)", text: "Equivalencias del promedio — planilla del colegio" }),
+    el("p", { class: "text-muted", style: "font-size:0.8rem;margin:0 0 var(--space-3)", text: "Cuando se calcula el promedio de las 4 notas (sustentación, funcionalidad, decoración, pruebas de campo), se clasifica según estos rangos. El puntaje de equivalencia es el número que aparece en la planilla de calificaciones del colegio." }),
+    bandsWrap,
+    addBtn,
+  ]);
+
+  return {
+    node,
+    serialize: () => ({ bands: bandRows.map((r) => r.read()) }),
   };
 }

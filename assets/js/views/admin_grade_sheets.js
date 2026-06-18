@@ -71,6 +71,16 @@ function notaFromPercentile(rank, count, tiers) {
   return { nota: Number(last.nota), label: last.label || "" };
 }
 
+// Clasifica el promedio en un nivel y devuelve { label, equivalencia }
+function clasificarPromedio(promedio, promedioBands) {
+  if (promedio == null || !Array.isArray(promedioBands)) return null;
+  for (const b of promedioBands) {
+    if (promedio >= Number(b.min) && promedio <= Number(b.max))
+      return { label: b.label || "", equivalencia: Number(b.equivalencia) || 0 };
+  }
+  return null;
+}
+
 // ─── Heurística para extraer clave de ordenamiento por apellido ─
 // Convención colombiana: NOMBRE1 [NOMBRE2] APELLIDO1 [APELLIDO2]
 function sortKeyApellido(fullName) {
@@ -206,9 +216,12 @@ function togglePreview(card, grade, students) {
     s.notaFuncionalidad != null ? fmtScore(s.notaFuncionalidad) : "—",
     s.notaDecoracion != null ? fmtScore(s.notaDecoracion) : "—",
     s.notaCampo != null ? fmtScore(s.notaCampo) : "—",
+    s.promedio != null ? fmtScore(s.promedio) : "—",
+    s.nivel || "—",
+    s.equivalencia != null ? String(s.equivalencia) : "—",
   ]);
 
-  const headers = ["#", "Nombre completo", "Equipo", "Sustentación", "Funcionalidad", "Decoración", "Pruebas campo"];
+  const headers = ["#", "Nombre completo", "Equipo", "Sustentación", "Funcionalidad", "Decoración", "Pruebas campo", "Promedio", "Nivel", "Equiv."];
   const preview = el("div", { "data-preview": "1", style: { marginTop: "var(--space-4)", borderTop: "1px solid var(--color-border)", paddingTop: "var(--space-3)", overflowX: "auto" } }, [
     buildTable(headers, rows),
   ]);
@@ -342,6 +355,16 @@ async function buildGradeData(edition) {
       : null;
     const notaCampo = campoResult?.nota ?? null;
 
+    // Promedio de las 4 notas (solo las que tengan valor)
+    const notas = [notaSustentacion, notaFuncionalidad, notaDecoracion, notaCampo].filter((n) => n != null);
+    const promedio = notas.length ? notas.reduce((s, n) => s + n, 0) / notas.length : null;
+
+    // Clasificar promedio → nivel + equivalencia numérica
+    const promedioBands = gradeConfig.promedio?.bands || [];
+    const clasif = promedio != null ? clasificarPromedio(promedio, promedioBands) : null;
+    const nivel = clasif?.label ?? null;
+    const equivalencia = clasif?.equivalencia ?? null;
+
     for (const member of teamMembers) {
       studentsByGrade[grade].push({
         fullName: member.full_name,
@@ -352,6 +375,9 @@ async function buildGradeData(edition) {
         notaFuncionalidad,
         notaDecoracion,
         notaCampo,
+        promedio,
+        nivel,
+        equivalencia,
         _sortKey: sortKeyApellido(member.full_name),
       });
     }
@@ -424,9 +450,9 @@ function addGradeSheet(XLSX, wb, grade, students, editionName) {
   const header = [
     ["FERIA STEAM — Seminario Diocesano Cristo Sacerdote"],
     [editionName],
-    [`Grado: ${grade}`, "", "", "", "", "", `Generado: ${fmtDateLong()}`],
+    [`Grado: ${grade}`, "", "", "", "", "", "", "", "", `Generado: ${fmtDateLong()}`],
     [],
-    ["#", "Nombre completo", "Equipo", "Sustentación", "Funcionalidad", "Decoración", "Pruebas de campo"],
+    ["#", "Nombre completo", "Equipo", "Sustentación", "Funcionalidad", "Decoración", "Pruebas de campo", "Promedio", "Nivel", "Equivalencia"],
   ];
 
   const rows = students.map((s, i) => [
@@ -437,12 +463,14 @@ function addGradeSheet(XLSX, wb, grade, students, editionName) {
     s.notaFuncionalidad != null ? s.notaFuncionalidad : "",
     s.notaDecoracion != null ? s.notaDecoracion : "",
     s.notaCampo != null ? s.notaCampo : "",
+    s.promedio != null ? Math.round(s.promedio * 100) / 100 : "",
+    s.nivel || "",
+    s.equivalencia != null ? s.equivalencia : "",
   ]);
 
   const data = [...header, ...rows];
   const ws = XLSX.utils.aoa_to_sheet(data);
 
-  // Anchos de columna
   ws["!cols"] = [
     { wch: 5 },   // #
     { wch: 38 },  // Nombre
@@ -451,12 +479,14 @@ function addGradeSheet(XLSX, wb, grade, students, editionName) {
     { wch: 14 },  // Funcionalidad
     { wch: 14 },  // Decoración
     { wch: 16 },  // Pruebas de campo
+    { wch: 12 },  // Promedio
+    { wch: 12 },  // Nivel
+    { wch: 14 },  // Equivalencia
   ];
 
-  // Merge de título
   ws["!merges"] = [
-    { s: { r: 0, c: 0 }, e: { r: 0, c: 6 } },
-    { s: { r: 1, c: 0 }, e: { r: 1, c: 6 } },
+    { s: { r: 0, c: 0 }, e: { r: 0, c: 9 } },
+    { s: { r: 1, c: 0 }, e: { r: 1, c: 9 } },
   ];
 
   XLSX.utils.book_append_sheet(wb, ws, sheetName);
@@ -534,15 +564,18 @@ function addGradePage(doc, grade, students, editionName, addFooter) {
     s.notaFuncionalidad != null ? fmtScore(s.notaFuncionalidad) : "—",
     s.notaDecoracion != null ? fmtScore(s.notaDecoracion) : "—",
     s.notaCampo != null ? fmtScore(s.notaCampo) : "—",
+    s.promedio != null ? fmtScore(s.promedio) : "—",
+    s.nivel || "—",
+    s.equivalencia != null ? String(s.equivalencia) : "—",
   ]);
 
   doc.autoTable({
     startY: y,
-    head: [["#", "Nombre completo", "Equipo", "Sustentación", "Funcionalidad\nprototipo", "Decoración\nprototipo", "Pruebas\nde campo"]],
+    head: [["#", "Nombre completo", "Equipo", "Sustent.", "Func.\nprot.", "Decor.\nprot.", "Pruebas\ncampo", "Prom.", "Nivel", "Equiv."]],
     body: tableBody,
     styles: {
-      fontSize: 8,
-      cellPadding: 2.5,
+      fontSize: 7,
+      cellPadding: 2,
       lineColor: [180, 195, 230],
       lineWidth: 0.2,
     },
@@ -551,17 +584,20 @@ function addGradePage(doc, grade, students, editionName, addFooter) {
       textColor: 255,
       fontStyle: "bold",
       halign: "center",
-      fontSize: 7.5,
+      fontSize: 6.5,
     },
     alternateRowStyles: { fillColor: [240, 244, 255] },
     columnStyles: {
-      0: { cellWidth: 8, halign: "center" },
+      0: { cellWidth: 7, halign: "center" },
       1: { cellWidth: "auto", fontStyle: "bold" },
-      2: { cellWidth: 40 },
-      3: { cellWidth: 22, halign: "center" },
-      4: { cellWidth: 22, halign: "center" },
-      5: { cellWidth: 22, halign: "center" },
-      6: { cellWidth: 22, halign: "center" },
+      2: { cellWidth: 32 },
+      3: { cellWidth: 16, halign: "center" },
+      4: { cellWidth: 16, halign: "center" },
+      5: { cellWidth: 16, halign: "center" },
+      6: { cellWidth: 16, halign: "center" },
+      7: { cellWidth: 14, halign: "center", fontStyle: "bold" },
+      8: { cellWidth: 18, halign: "center" },
+      9: { cellWidth: 14, halign: "center", fontStyle: "bold", textColor: [30, 50, 120] },
     },
     margin: { left: margin, right: margin },
     theme: "grid",

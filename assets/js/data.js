@@ -846,6 +846,14 @@ export function defaultGradeConfig() {
         { pct: 30, nota: 3.0, label: "Básico" },
       ],
     },
+    promedio: {
+      bands: [
+        { min: 1.0, max: 2.4, label: "Bajo", equivalencia: 20 },
+        { min: 2.5, max: 3.4, label: "Básico", equivalencia: 35 },
+        { min: 3.5, max: 4.4, label: "Alto", equivalencia: 42 },
+        { min: 4.5, max: 5.0, label: "Superior", equivalencia: 48 },
+      ],
+    },
   };
 }
 
