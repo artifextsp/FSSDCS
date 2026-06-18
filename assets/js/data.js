@@ -867,6 +867,8 @@ export async function getGradeConfig(editionId) {
   if (error) throw error;
   const cfg = data?.config;
   if (!cfg || !cfg.columns) return defaultGradeConfig();
+  const defaults = defaultGradeConfig();
+  if (!cfg.promedio) cfg.promedio = defaults.promedio;
   return cfg;
 }
 

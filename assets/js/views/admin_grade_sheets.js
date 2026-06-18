@@ -318,8 +318,9 @@ async function buildGradeData(edition) {
   const studentsByGrade = {};
 
   for (const team of allTeams) {
+    if (!team.grade_label) continue;
     const proj = projectMap[team.project_id];
-    const grade = team.grade_label || proj?.grade_label || "Sin grado";
+    const grade = team.grade_label;
     if (!studentsByGrade[grade]) studentsByGrade[grade] = [];
 
     const teamMembers = membersByTeam[team.id] || [];
